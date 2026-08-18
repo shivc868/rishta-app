@@ -1,0 +1,452 @@
+'use client';
+
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ArrowUpDown, Filter, SearchX, ShieldCheck } from 'lucide-react';
+import * as api from '@/lib/api';
+import { ApiError } from '@/lib/api';
+import type { BrowseCard, ProfileFilters } from '@/types';
+import {
+  clearFilter,
+  countActiveFilters,
+  narrowestFilter,
+  parseFilters,
+  serializeFilters,
+} from '@/lib/filter-params';
+import {
+  EDUCATION_LEVEL_LABELS,
+  INCOME_LABELS,
+  MANGLIK_LABELS,
+  MARITAL_LABELS,
+  OCCUPATION_LABELS,
+  RELIGION_LABELS,
+  formatHeightShort,
+  ACTIONS,
+} from '@/lib/labels';
+import { FilterForm, type FilterOptions } from '@/components/filters';
+import { ProfileCardItem, ProfileCardSkeleton } from '@/components/profile-card';
+import { Button, Chip, EmptyState, ErrorNote, Sheet } from '@/components/ui';
+import { useToast } from '@/components/providers';
+
+export default function BrowsePage() {
+  return (
+    <Suspense fallback={<ListSkeleton />}>
+      <BrowseInner />
+    </Suspense>
+  );
+}
+
+function BrowseInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { push } = useToast();
+
+  const filters = useMemo(() => parseFilters(searchParams), [searchParams]);
+
+  const [cards, setCards] = useState<BrowseCard[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [options, setOptions] = useState<FilterOptions | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const activeCount = countActiveFilters(filters);
+
+  const applyFilters = useCallback(
+    (next: ProfileFilters) => {
+      const qs = serializeFilters(next).toString();
+      router.replace(qs ? `/browse?${qs}` : '/browse', { scroll: false });
+    },
+    [router],
+  );
+
+  const load = useCallback(async () => {
+    setError(null);
+    setCards(null);
+    try {
+      const [result, opts] = await Promise.all([api.getProfiles(filters), api.getFilterOptions()]);
+      setCards(result.items);
+      setTotal(result.total);
+      setOptions(opts);
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : 'Could not open the register. Check your connection and try again.',
+      );
+    }
+  }, [filters]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  /** Optimistic save — flips immediately, rolls back and explains on failure. */
+  async function onToggleSave(profileId: string) {
+    const before = cards;
+    setSavingId(profileId);
+    setCards(
+      (prev) =>
+        prev?.map((c) =>
+          c.profile.id === profileId ? { ...c, isShortlisted: !c.isShortlisted } : c,
+        ) ?? prev,
+    );
+    try {
+      const saved = await api.toggleShortlist(profileId);
+      push('success', saved ? 'Saved to your list.' : 'Removed from your saved list.');
+    } catch (err) {
+      setCards(before);
+      push('error', err instanceof ApiError ? err.message : 'Could not save. Try once more.');
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  const chips = buildChips(filters);
+
+  return (
+    <div className="md:flex md:gap-6">
+      {/* Desktop: sticky sidebar. Mobile: nothing — the sheet handles it. */}
+      <aside className="hidden md:block md:w-72 md:shrink-0">
+        <div className="sticky top-[124px] max-h-[calc(100dvh-140px)] overflow-y-auto rounded-xl border border-rule bg-card p-3 shadow-card">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-base font-bold">
+              Filters
+              <span className="hindi block font-normal text-ink-3">छाँटें</span>
+            </h2>
+            {activeCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => applyFilters({ sort: filters.sort })}
+                className="text-sm font-semibold text-stamp underline"
+              >
+                Clear all
+              </button>
+            ) : null}
+          </div>
+          {options ? (
+            <FilterForm value={filters} options={options} onChange={applyFilters} />
+          ) : (
+            <p className="py-6 text-center text-sm text-ink-3">Loading filters…</p>
+          )}
+        </div>
+      </aside>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-xl font-bold leading-tight">
+            Profiles in the register
+            <span className="hindi block font-normal text-ink-3">रजिस्टर की प्रोफ़ाइल</span>
+          </h1>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <Button
+            className="md:hidden"
+            onClick={() => setSheetOpen(true)}
+            icon={<Filter size={20} aria-hidden />}
+          >
+            Filters
+            {activeCount > 0 ? (
+              <span className="code ml-1 grid h-6 min-w-6 place-items-center rounded-full bg-stamp px-1.5 text-[12px] font-bold text-white">
+                {activeCount}
+              </span>
+            ) : null}
+          </Button>
+
+          <label className="tap ml-auto flex items-center gap-2 rounded-lg border-2 border-rule-strong bg-card px-3">
+            <ArrowUpDown size={18} className="shrink-0 text-ink-3" aria-hidden />
+            <span className="sr-only">Sort profiles</span>
+            <select
+              value={filters.sort ?? 'newest'}
+              onChange={(e) =>
+                applyFilters({ ...filters, sort: e.target.value as ProfileFilters['sort'] })
+              }
+              className="bg-transparent py-2 text-[15px] font-semibold text-ink"
+            >
+              <option value="newest">Newest first</option>
+              <option value="recently_active">Recently active</option>
+            </select>
+          </label>
+        </div>
+
+        {chips.length > 0 ? (
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {chips.map((chip) => (
+              <li key={chip.id}>
+                <Chip
+                  onRemove={() => applyFilters(chip.remove(filters))}
+                  removeLabel={`Remove filter ${chip.label}`}
+                >
+                  {chip.label}
+                </Chip>
+              </li>
+            ))}
+            <li>
+              <button
+                type="button"
+                onClick={() => applyFilters({ sort: filters.sort })}
+                className="tap px-2 text-sm font-semibold text-stamp underline"
+              >
+                Clear all
+              </button>
+            </li>
+          </ul>
+        ) : null}
+
+        {/* Count is always visible, even while loading, so the page never jumps. */}
+        <p className="mt-3 border-b-2 border-stamp/25 pb-1.5 text-[15px] font-bold" aria-live="polite">
+          {cards === null ? 'Counting profiles…' : `${total} ${total === 1 ? 'profile' : 'profiles'}`}
+          {activeCount > 0 && cards !== null ? (
+            <span className="font-normal text-ink-3"> match your filters</span>
+          ) : null}
+        </p>
+
+        {error ? (
+          <div className="mt-4">
+            <ErrorNote message={error} onRetry={load} />
+          </div>
+        ) : cards === null ? (
+          <ListSkeleton />
+        ) : cards.length === 0 ? (
+          <div className="mt-4">
+            <EmptyState
+              icon={<SearchX size={26} aria-hidden />}
+              title="No profiles match these filters"
+              hindi="इन फ़िल्टर से कोई प्रोफ़ाइल नहीं मिली"
+              body={
+                activeCount > 0
+                  ? 'Try removing one filter. The narrowest one is usually the reason.'
+                  : 'No profiles are listed for your search right now. New biodata is added every week.'
+              }
+              action={
+                (() => {
+                  const narrow = narrowestFilter(filters);
+                  return narrow ? (
+                    <Button
+                      variant="primary"
+                      onClick={() => applyFilters(clearFilter(filters, narrow.key))}
+                    >
+                      Remove the {narrow.label} filter
+                    </Button>
+                  ) : null;
+                })()
+              }
+            />
+          </div>
+        ) : (
+          <ul className="mt-4 space-y-3">
+            {cards.map((card) => (
+              <ProfileCardItem
+                key={card.profile.id}
+                card={card}
+                onToggleSave={onToggleSave}
+                saving={savingId === card.profile.id}
+              />
+            ))}
+          </ul>
+        )}
+
+        <p className="mt-6 flex items-start gap-2 border-t border-rule pt-4 text-sm text-ink-2">
+          <ShieldCheck size={18} className="mt-0.5 shrink-0 text-seal" aria-hidden />
+          <span>
+            Names, photos and phone numbers are never shown in this list — only after both families
+            agree.
+            <span className="hindi block text-ink-3">
+              नाम, फ़ोटो और नंबर इस सूची में कभी नहीं दिखते।
+            </span>
+          </span>
+        </p>
+      </div>
+
+      <MobileFilterSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        filters={filters}
+        options={options}
+        onApply={(next) => {
+          applyFilters(next);
+          setSheetOpen(false);
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * The sheet edits a draft copy, so nothing reloads under the parent's finger
+ * while they are still choosing. The live count on the Apply button is what
+ * tells them whether they are about to see anything.
+ */
+function MobileFilterSheet({
+  open,
+  onClose,
+  filters,
+  options,
+  onApply,
+}: {
+  open: boolean;
+  onClose: () => void;
+  filters: ProfileFilters;
+  options: FilterOptions | null;
+  onApply: (next: ProfileFilters) => void;
+}) {
+  const [draft, setDraft] = useState<ProfileFilters>(filters);
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (open) setDraft(filters);
+  }, [open, filters]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setCount(null);
+    const timer = setTimeout(async () => {
+      try {
+        const n = await api.countProfiles(draft);
+        if (!cancelled) setCount(n);
+      } catch {
+        if (!cancelled) setCount(null);
+      }
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [draft, open]);
+
+  const activeCount = countActiveFilters(draft);
+
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={activeCount > 0 ? `Filters (${activeCount})` : 'Filters'}
+      hindi="छाँटें"
+      footer={
+        <div className="flex gap-3">
+          <Button
+            className="shrink-0"
+            onClick={() => setDraft({ sort: draft.sort })}
+            disabled={activeCount === 0}
+          >
+            Clear all
+          </Button>
+          <Button
+            variant="primary"
+            fullWidth
+            onClick={() => onApply(draft)}
+            label={{
+              en:
+                count === null
+                  ? ACTIONS.applyFilters.en
+                  : `Show ${count} ${count === 1 ? 'profile' : 'profiles'}`,
+              hi: ACTIONS.applyFilters.hi,
+            }}
+          />
+        </div>
+      }
+    >
+      {options ? (
+        <FilterForm value={draft} options={options} onChange={setDraft} />
+      ) : (
+        <p className="py-8 text-center text-ink-3">Loading filters…</p>
+      )}
+    </Sheet>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <ul className="mt-4 space-y-3" aria-busy="true" aria-label="Loading profiles">
+      {Array.from({ length: 5 }, (_, i) => (
+        <ProfileCardSkeleton key={i} />
+      ))}
+    </ul>
+  );
+}
+
+// --- chips ------------------------------------------------------------------
+
+interface ChipSpec {
+  id: string;
+  label: string;
+  remove: (f: ProfileFilters) => ProfileFilters;
+}
+
+function buildChips(f: ProfileFilters): ChipSpec[] {
+  const chips: ChipSpec[] = [];
+
+  if (f.ageMin !== undefined || f.ageMax !== undefined) {
+    chips.push({
+      id: 'age',
+      label: `Age ${f.ageMin ?? 'any'}–${f.ageMax ?? 'any'}`,
+      remove: (x) => clearFilter(x, 'ageMin'),
+    });
+  }
+  if (f.heightMinCm !== undefined || f.heightMaxCm !== undefined) {
+    chips.push({
+      id: 'height',
+      label: `Height ${f.heightMinCm ? formatHeightShort(f.heightMinCm) : 'any'}–${
+        f.heightMaxCm ? formatHeightShort(f.heightMaxCm) : 'any'
+      }`,
+      remove: (x) => clearFilter(x, 'heightMinCm'),
+    });
+  }
+  if (f.maxDistanceKm !== undefined) {
+    chips.push({
+      id: 'distance',
+      label: `Within ${f.maxDistanceKm} km`,
+      remove: (x) => clearFilter(x, 'maxDistanceKm'),
+    });
+  }
+  if (f.verifiedOnly) {
+    chips.push({
+      id: 'verified',
+      label: 'Verified only',
+      remove: (x) => clearFilter(x, 'verifiedOnly'),
+    });
+  }
+
+  // Single-valued location chips, cleared cascade-aware by clearFilter.
+  for (const [key, label] of [
+    ['state', f.state],
+    ['district', f.district],
+    ['city', f.city],
+  ] as const) {
+    if (label) {
+      chips.push({ id: key, label, remove: (x) => clearFilter(x, key) });
+    }
+  }
+
+  const lists: Array<[keyof ProfileFilters, (v: string) => string]> = [
+    ['maritalStatus', (v) => MARITAL_LABELS[v as keyof typeof MARITAL_LABELS]?.en ?? v],
+    ['educationLevel', (v) => EDUCATION_LEVEL_LABELS[v as keyof typeof EDUCATION_LEVEL_LABELS]?.en ?? v],
+    ['occupationCategory', (v) => OCCUPATION_LABELS[v as keyof typeof OCCUPATION_LABELS]?.en ?? v],
+    ['incomeBand', (v) => INCOME_LABELS[v as keyof typeof INCOME_LABELS]?.en ?? v],
+    ['religion', (v) => RELIGION_LABELS[v as keyof typeof RELIGION_LABELS]?.en ?? v],
+    ['community', (v) => v],
+    ['manglik', (v) => MANGLIK_LABELS[v as keyof typeof MANGLIK_LABELS]?.en ?? v],
+  ];
+
+  for (const [key, label] of lists) {
+    const values = f[key] as string[] | undefined;
+    if (!values?.length) continue;
+    for (const v of values) {
+      chips.push({
+        id: `${key}:${v}`,
+        label: label(v),
+        remove: (x) => {
+          const rest = (x[key] as string[]).filter((item) => item !== v);
+          const next = { ...x };
+          if (rest.length) (next[key] as string[]) = rest;
+          else delete next[key];
+          return next;
+        },
+      });
+    }
+  }
+
+  return chips;
+}
