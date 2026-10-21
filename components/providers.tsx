@@ -43,9 +43,9 @@ function ToastHost({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: number)
     info: <Info size={20} aria-hidden />,
   };
   const tones = {
-    success: 'border-seal bg-seal-wash text-seal',
-    error: 'border-oxide bg-oxide-wash text-oxide',
-    info: 'border-stamp bg-stamp-wash text-stamp-ink',
+    success: 'ring-seal/30 bg-seal-wash text-seal',
+    error: 'ring-oxide/30 bg-oxide-wash text-oxide',
+    info: 'ring-stamp/25 bg-stamp-wash text-stamp-ink',
   };
   return (
     <div
@@ -57,7 +57,7 @@ function ToastHost({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: number)
         <div
           key={t.id}
           className={cx(
-            'pointer-events-auto flex w-full max-w-md items-start gap-2 border-2 px-3 py-2.5 text-[15px] font-medium shadow-sm',
+            'pointer-events-auto flex w-full max-w-md items-start gap-2 rounded-2xl px-4 py-3 text-[15px] font-medium ring-1 shadow-[var(--shadow-e2)] backdrop-blur-sm',
             tones[t.tone],
           )}
           style={{ animation: 'rishta-fade-in 160ms ease-out' }}

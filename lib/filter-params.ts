@@ -14,8 +14,9 @@ const LIST_KEYS = [
   'occupationCategory',
   'incomeBand',
   'religion',
-  'community',
+  'category',
   'manglik',
+  'diet',
 ] as const satisfies ReadonlyArray<keyof ProfileFilters>;
 
 /** Single-valued location cascade. */
@@ -53,7 +54,8 @@ export function parseFilters(params: URLSearchParams | ReadonlyURLSearchParamsLi
   }
   if (get('verifiedOnly') === '1') out.verifiedOnly = true;
   const sort = get('sort');
-  if (sort === 'newest' || sort === 'recently_active') out.sort = sort as SortOrder;
+  if (sort === 'best_match' || sort === 'newest' || sort === 'recently_active')
+    out.sort = sort as SortOrder;
 
   return out;
 }
@@ -73,7 +75,7 @@ export function serializeFilters(filters: ProfileFilters): URLSearchParams {
     if (v) params.set(key, v);
   }
   if (filters.verifiedOnly) params.set('verifiedOnly', '1');
-  if (filters.sort && filters.sort !== 'newest') params.set('sort', filters.sort);
+  if (filters.sort && filters.sort !== 'best_match') params.set('sort', filters.sort);
   return params;
 }
 
@@ -102,7 +104,8 @@ export function narrowestFilter(
     { key: 'occupationCategory', label: 'kind of work' },
     { key: 'educationLevel', label: 'education level' },
     { key: 'manglik', label: 'manglik' },
-    { key: 'community', label: 'jati' },
+    { key: 'diet', label: 'diet' },
+    { key: 'category', label: 'category' },
     { key: 'religion', label: 'religion' },
     { key: 'city', label: 'tehsil' },
     { key: 'district', label: 'district' },

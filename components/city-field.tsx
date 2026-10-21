@@ -109,7 +109,6 @@ export function StateDistrictTehsilField({
     <div className="space-y-4">
       <Select
         label="State"
-        hindi="राज्य"
         value={state}
         onChange={(e) => {
           setState(e.target.value);
@@ -118,7 +117,7 @@ export function StateDistrictTehsilField({
           if (value) onChange(null);
         }}
       >
-        <option value="">Choose state / राज्य चुनें</option>
+        <option value="">Choose state</option>
         {INDIA_STATES.map((st) => (
           <option key={st} value={st}>
             {st}
@@ -128,7 +127,6 @@ export function StateDistrictTehsilField({
 
       <Select
         label="District"
-        hindi="ज़िला"
         value={district}
         disabled={!state}
         onChange={(e) => {
@@ -136,9 +134,9 @@ export function StateDistrictTehsilField({
           setTehsil('');
           if (value) onChange(null);
         }}
-        hint={!state ? 'Choose the state first / पहले राज्य चुनें' : undefined}
+        hint={!state ? 'Locked — choose the state first' : undefined}
       >
-        <option value="">Choose district / ज़िला चुनें</option>
+        <option value="">Choose district</option>
         {districts.map((d) => (
           <option key={d} value={d}>
             {d}
@@ -148,14 +146,13 @@ export function StateDistrictTehsilField({
 
       <Select
         label="Tehsil"
-        hindi="तहसील"
         value={tehsil}
         disabled={!district}
         onChange={(e) => void pickTehsil(e.target.value)}
         error={error}
-        hint={!district ? 'Choose the district first / पहले ज़िला चुनें' : undefined}
+        hint={!district ? 'Locked — choose the district first' : undefined}
       >
-        <option value="">Choose tehsil / तहसील चुनें</option>
+        <option value="">Choose tehsil</option>
         {tehsils.map((t) => (
           <option key={t} value={t}>
             {t}
@@ -170,7 +167,7 @@ export function StateDistrictTehsilField({
         </p>
       ) : null}
       {loadFailed ? (
-        <p className="rounded-lg border-2 border-oxide/40 bg-oxide-wash px-3 py-2.5 text-sm font-medium text-oxide">
+        <p className="rounded-xl bg-oxide-wash px-3.5 py-2.5 text-sm font-medium text-oxide ring-1 ring-oxide/25">
           Could not load the area list. Check your connection and choose again.
         </p>
       ) : null}

@@ -15,6 +15,7 @@ import { createSeedData } from './mock-data';
 import type {
   Account,
   Grant,
+  PartnerPreference,
   Profile,
   ProfilePrivate,
   Request,
@@ -27,8 +28,8 @@ import type {
  * an older shape (v1 stored yearly income bands, v2 coarser monthly ones) must
  * start clean rather than render values no label map knows about.
  */
-const STORE_VERSION = 10;
-const STORAGE_KEY = 'rishta-db-v10';
+const STORE_VERSION = 17;
+const STORAGE_KEY = 'rishta-db-v17';
 
 export interface Tables {
   accounts: Account[];
@@ -37,6 +38,7 @@ export interface Tables {
   requests: Request[];
   grants: Grant[];
   shortlists: Shortlist[];
+  preferences: PartnerPreference[];
 }
 
 export interface DbState extends Tables {
@@ -56,11 +58,14 @@ export interface DbState extends Tables {
   insertShortlist: (shortlist: Shortlist) => void;
   updateShortlist: (id: string, patch: Partial<Shortlist>) => void;
   deleteShortlist: (id: string) => void;
+  upsertPreference: (pref: PartnerPreference) => void;
   upsertAccount: (account: Account) => void;
   /** Returns a fresh row id, e.g. "r041". */
   takeId: (prefix: string) => string;
   /** Dev-only: wipe everything back to the seed snapshot. */
   resetDemoData: () => void;
+  /** Drop every row flagged isSeed (and anything pointing at those profiles); keep real ones. */
+  removeSeedData: () => void;
 }
 
 function initialTables(): Tables {
@@ -72,6 +77,7 @@ function initialTables(): Tables {
     requests: s.requests,
     grants: s.grants,
     shortlists: s.shortlists,
+    preferences: [],
   };
 }
 
@@ -138,6 +144,13 @@ export const useDb = create<DbState>()(
       deleteShortlist: (id) =>
         set((s) => ({ shortlists: s.shortlists.filter((x) => x.id !== id) })),
 
+      upsertPreference: (pref) =>
+        set((s) => ({
+          preferences: s.preferences.some((p) => p.profileId === pref.profileId)
+            ? s.preferences.map((p) => (p.profileId === pref.profileId ? pref : p))
+            : [...s.preferences, pref],
+        })),
+
       upsertAccount: (account) =>
         set((s) => ({
           accounts: s.accounts.some((a) => a.id === account.id)
@@ -153,6 +166,23 @@ export const useDb = create<DbState>()(
 
       resetDemoData: () =>
         set({ ...initialTables(), session: EMPTY_SESSION, nextId: 1000 }),
+
+      removeSeedData: () =>
+        set((s) => {
+          const gone = new Set(s.profiles.filter((p) => p.isSeed).map((p) => p.id));
+          const keep = (id: string) => !gone.has(id);
+          return {
+            profiles: s.profiles.filter((p) => !p.isSeed),
+            profilePrivates: s.profilePrivates.filter((x) => keep(x.profileId)),
+            requests: s.requests.filter((r) => keep(r.fromProfileId) && keep(r.toProfileId)),
+            grants: s.grants.filter((g) => keep(g.granteeProfileId) && keep(g.targetProfileId)),
+            shortlists: s.shortlists.filter((x) => keep(x.ownerProfileId) && keep(x.targetProfileId)),
+            preferences: s.preferences.filter((x) => keep(x.profileId)),
+            accounts: s.accounts
+              .filter((a) => !a.isSeed)
+              .map((a) => ({ ...a, ownedProfileIds: a.ownedProfileIds.filter(keep) })),
+          };
+        }),
     }),
     {
       name: STORAGE_KEY,
@@ -166,6 +196,7 @@ export const useDb = create<DbState>()(
         requests: s.requests,
         grants: s.grants,
         shortlists: s.shortlists,
+        preferences: s.preferences,
         session: s.session,
         nextId: s.nextId,
       }),

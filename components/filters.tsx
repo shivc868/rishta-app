@@ -11,6 +11,8 @@ import { ChevronDown } from 'lucide-react';
 import type { ProfileFilters, Religion } from '@/types';
 import {
   RELIGION_LABELS,
+  CATEGORY_LABELS,
+  DIET_LABELS,
   EDUCATION_LEVEL_LABELS,
   INCOME_LABELS,
   MANGLIK_LABELS,
@@ -23,7 +25,6 @@ import { CheckRow, Select, cx } from './ui';
 
 export interface FilterOptions {
   religions: Religion[];
-  jatis: string[];
   ageRange: [number, number];
   heightRange: [number, number];
 }
@@ -36,7 +37,6 @@ export interface FilterOptions {
  */
 function DualRange({
   label,
-  hindi,
   min,
   max,
   step = 1,
@@ -46,7 +46,6 @@ function DualRange({
   onChange,
 }: {
   label: string;
-  hindi: string;
   min: number;
   max: number;
   step?: number;
@@ -61,10 +60,7 @@ function DualRange({
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[15px] font-semibold">
-          {label}
-          <span className="hindi block font-normal text-ink-3">{hindi}</span>
-        </span>
+        <span className="text-[15px] font-semibold">{label}</span>
         <span className="code text-sm font-semibold text-ink">
           {format(valueMin)} – {format(valueMax)}
         </span>
@@ -86,7 +82,7 @@ function DualRange({
           step={step}
           value={valueMin}
           onChange={(e) => onChange(Math.min(Number(e.target.value), valueMax), valueMax)}
-          className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-7 [&::-webkit-slider-thumb]:w-7 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-stamp [&::-webkit-slider-thumb]:bg-white [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-7 [&::-moz-range-thumb]:w-7 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-stamp [&::-moz-range-thumb]:bg-white"
+          className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-7 [&::-webkit-slider-thumb]:w-7 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-stamp [&::-webkit-slider-thumb]:bg-card [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-7 [&::-moz-range-thumb]:w-7 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-stamp [&::-moz-range-thumb]:bg-card"
         />
         <input
           type="range"
@@ -97,7 +93,7 @@ function DualRange({
           step={step}
           value={valueMax}
           onChange={(e) => onChange(valueMin, Math.max(Number(e.target.value), valueMin))}
-          className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-7 [&::-webkit-slider-thumb]:w-7 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-stamp [&::-webkit-slider-thumb]:bg-white [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-7 [&::-moz-range-thumb]:w-7 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-stamp [&::-moz-range-thumb]:bg-white"
+          className="pointer-events-none absolute inset-x-0 top-0 h-8 w-full appearance-none bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-7 [&::-webkit-slider-thumb]:w-7 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-stamp [&::-webkit-slider-thumb]:bg-card [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-7 [&::-moz-range-thumb]:w-7 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-stamp [&::-moz-range-thumb]:bg-card"
         />
       </div>
     </div>
@@ -106,13 +102,11 @@ function DualRange({
 
 function Section({
   title,
-  hindi,
   children,
   defaultOpen = false,
   activeCount = 0,
 }: {
   title: string;
-  hindi: string;
   children: React.ReactNode;
   defaultOpen?: boolean;
   activeCount?: number;
@@ -120,10 +114,7 @@ function Section({
   return (
     <details open={defaultOpen} className="border-b border-rule py-1 last:border-b-0">
       <summary className="tap flex cursor-pointer list-none items-center gap-2 py-2 [&::-webkit-details-marker]:hidden">
-        <span className="flex-1 text-[15px] font-semibold">
-          {title}
-          <span className="hindi block font-normal text-ink-3">{hindi}</span>
-        </span>
+        <span className="flex-1 text-[15px] font-semibold">{title}</span>
         {activeCount > 0 ? (
           <span className="code grid h-6 min-w-6 place-items-center rounded-full bg-stamp px-1.5 text-[12px] font-bold text-white">
             {activeCount}
@@ -192,20 +183,16 @@ function LocationFilter({
 
   return (
     <div className="space-y-3 py-3">
-      <p className="text-[15px] font-bold">
-        Location
-        <span className="hindi ml-2 font-normal text-ink-3">स्थान</span>
-      </p>
+      <p className="text-[15px] font-bold">Location</p>
 
       <Select
         label="State"
-        hindi="राज्य"
         value={value.state ?? ''}
         onChange={(e) =>
           patch({ state: e.target.value || undefined, district: undefined, city: undefined })
         }
       >
-        <option value="">All states / सभी राज्य</option>
+        <option value="">All states</option>
         {INDIA_STATES.map((st) => (
           <option key={st} value={st}>
             {st}
@@ -216,11 +203,10 @@ function LocationFilter({
       {value.state ? (
         <Select
           label="District"
-          hindi="ज़िला"
           value={value.district ?? ''}
           onChange={(e) => patch({ district: e.target.value || undefined, city: undefined })}
         >
-          <option value="">All districts / सभी ज़िले</option>
+          <option value="">All districts</option>
           {districts.map((d) => (
             <option key={d} value={d}>
               {d}
@@ -232,11 +218,10 @@ function LocationFilter({
       {value.state && value.district ? (
         <Select
           label="Tehsil"
-          hindi="तहसील"
           value={value.city ?? ''}
           onChange={(e) => patch({ city: e.target.value || undefined })}
         >
-          <option value="">All tehsils / सभी तहसीलें</option>
+          <option value="">All tehsils</option>
           {tehsils.map((t) => (
             <option key={t} value={t}>
               {t}
@@ -244,31 +229,6 @@ function LocationFilter({
           ))}
         </Select>
       ) : null}
-
-      <div>
-        <label className="text-[15px] font-semibold">
-          Within distance from you
-          <span className="hindi block font-normal text-ink-3">आपसे इतनी दूरी तक</span>
-        </label>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {[25, 50, 100, undefined].map((km) => (
-            <button
-              key={String(km)}
-              type="button"
-              onClick={() => patch({ maxDistanceKm: km })}
-              aria-pressed={value.maxDistanceKm === km}
-              className={cx(
-                'tap rounded-lg border-2 px-3 py-2 text-[15px] font-semibold',
-                value.maxDistanceKm === km
-                  ? 'border-stamp bg-stamp-wash text-stamp-ink'
-                  : 'border-rule-strong bg-card text-ink',
-              )}
-            >
-              {km ? `${km} km` : 'Any distance'}
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -296,7 +256,6 @@ export function FilterForm({
       <div className="space-y-5 py-3">
         <DualRange
           label="Age"
-          hindi="आयु"
           min={ageFloor}
           max={ageCeil}
           valueMin={value.ageMin ?? ageFloor}
@@ -311,7 +270,6 @@ export function FilterForm({
         />
         <DualRange
           label="Height"
-          hindi="कद"
           min={hFloor}
           max={hCeil}
           valueMin={value.heightMinCm ?? hFloor}
@@ -326,21 +284,7 @@ export function FilterForm({
         />
       </div>
 
-      <div className="py-3">
-        <CheckRow
-          checked={Boolean(value.verifiedOnly)}
-          onChange={(on) => patch({ verifiedOnly: on || undefined })}
-        >
-          <span className="font-semibold">Only verified profiles</span>
-          <span className="hindi block text-ink-3">केवल सत्यापित प्रोफ़ाइल</span>
-        </CheckRow>
-      </div>
-
-      <Section
-        title="Marital status"
-        hindi="वैवाहिक स्थिति"
-        activeCount={value.maritalStatus?.length ?? 0}
-      >
+      <Section title="Marital status" activeCount={value.maritalStatus?.length ?? 0}>
         {Object.entries(MARITAL_LABELS).map(([key, l]) => (
           <CheckRow
             key={key}
@@ -350,12 +294,11 @@ export function FilterForm({
             }
           >
             {l.en}
-            <span className="hindi block text-ink-3">{l.hi}</span>
           </CheckRow>
         ))}
       </Section>
 
-      <Section title="Education" hindi="शिक्षा" activeCount={value.educationLevel?.length ?? 0}>
+      <Section title="Education" activeCount={value.educationLevel?.length ?? 0}>
         {Object.entries(EDUCATION_LEVEL_LABELS).map(([key, l]) => (
           <CheckRow
             key={key}
@@ -365,12 +308,11 @@ export function FilterForm({
             }
           >
             {l.en}
-            <span className="hindi block text-ink-3">{l.hi}</span>
           </CheckRow>
         ))}
       </Section>
 
-      <Section title="Job type" hindi="नौकरी का प्रकार" activeCount={value.occupationCategory?.length ?? 0}>
+      <Section title="Job type" activeCount={value.occupationCategory?.length ?? 0}>
         {Object.entries(OCCUPATION_LABELS).map(([key, l]) => (
           <CheckRow
             key={key}
@@ -380,12 +322,11 @@ export function FilterForm({
             }
           >
             {l.en}
-            <span className="hindi block text-ink-3">{l.hi}</span>
           </CheckRow>
         ))}
       </Section>
 
-      <Section title="Monthly income" hindi="मासिक आय" activeCount={value.incomeBand?.length ?? 0}>
+      <Section title="Monthly income" activeCount={value.incomeBand?.length ?? 0}>
         {Object.entries(INCOME_LABELS).map(([key, l]) => (
           <CheckRow
             key={key}
@@ -393,15 +334,13 @@ export function FilterForm({
             onChange={(on) => patch({ incomeBand: toggle(value.incomeBand, key as never, on) })}
           >
             {l.en}
-            <span className="hindi block text-ink-3">{l.hi}</span>
           </CheckRow>
         ))}
       </Section>
 
       <Section
-        title="Religion & jati"
-        hindi="धर्म और जाति"
-        activeCount={(value.religion?.length ?? 0) + (value.community?.length ?? 0)}
+        title="Religion & category"
+        activeCount={(value.religion?.length ?? 0) + (value.category?.length ?? 0)}
       >
         {options.religions.map((r) => (
           <CheckRow
@@ -410,27 +349,23 @@ export function FilterForm({
             onChange={(on) => patch({ religion: toggle(value.religion, r, on) })}
           >
             {RELIGION_LABELS[r].en}
-            <span className="hindi block text-ink-3">{RELIGION_LABELS[r].hi}</span>
           </CheckRow>
         ))}
-        <div className="mt-3 border-t border-dotted border-rule pt-2">
-          <p className="mb-1 text-sm font-semibold text-ink-2">
-            Jati
-            <span className="hindi block font-normal text-ink-3">जाति</span>
-          </p>
-          {options.jatis.map((j) => (
+        <div className="mt-3 border-t border-rule pt-2.5">
+          <p className="mb-1 text-sm font-semibold text-ink-2">Category</p>
+          {Object.entries(CATEGORY_LABELS).map(([key, l]) => (
             <CheckRow
-              key={j}
-              checked={value.community?.includes(j) ?? false}
-              onChange={(on) => patch({ community: toggle(value.community, j, on) })}
+              key={key}
+              checked={value.category?.includes(key as never) ?? false}
+              onChange={(on) => patch({ category: toggle(value.category, key as never, on) })}
             >
-              {j}
+              {l.en}
             </CheckRow>
           ))}
         </div>
       </Section>
 
-      <Section title="Manglik" hindi="मांगलिक" activeCount={value.manglik?.length ?? 0}>
+      <Section title="Manglik" activeCount={value.manglik?.length ?? 0}>
         {Object.entries(MANGLIK_LABELS).map(([key, l]) => (
           <CheckRow
             key={key}
@@ -438,7 +373,18 @@ export function FilterForm({
             onChange={(on) => patch({ manglik: toggle(value.manglik, key as never, on) })}
           >
             {l.en}
-            <span className="hindi block text-ink-3">{l.hi}</span>
+          </CheckRow>
+        ))}
+      </Section>
+
+      <Section title="Food" activeCount={value.diet?.length ?? 0}>
+        {Object.entries(DIET_LABELS).map(([key, l]) => (
+          <CheckRow
+            key={key}
+            checked={value.diet?.includes(key as never) ?? false}
+            onChange={(on) => patch({ diet: toggle(value.diet, key as never, on) })}
+          >
+            {l.en}
           </CheckRow>
         ))}
       </Section>

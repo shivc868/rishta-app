@@ -4,33 +4,22 @@
  * Profile detail. Everything on this page is driven by `ProfileView` from the
  * API — the component decides layout, never permission. If a field is not in
  * `revealed`, there is nothing here that could print it.
+ *
+ * One action lives here: Request number. The other family says yes or no;
+ * on yes their number (and name) appear in the bar at the bottom.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import {
-  ArrowLeft,
-  Bookmark,
-  BookmarkCheck,
-  Clock,
-  Flag,
-  Handshake,
-  Hourglass,
-  Image as ImageIcon,
-  Lock,
-  MapPin,
-  Phone,
-  ShieldCheck,
-  Undo2,
-  UserRound,
-} from 'lucide-react';
+import { ArrowLeft, Bookmark, BookmarkCheck, Clock, Flag, MapPin, Phone, UserRound } from 'lucide-react';
 import * as api from '@/lib/api';
 import { ApiError } from '@/lib/api';
 import type { ProfileView } from '@/types';
 import {
   ACTIONS,
-  DIET_LABELS,
+  CATEGORY_LABELS,
+  COMPLEXION_LABELS,
   EDUCATION_LEVEL_LABELS,
   INCOME_LABELS,
   MANGLIK_LABELS,
@@ -38,7 +27,7 @@ import {
   OCCUPATION_LABELS,
   RELIGION_LABELS,
   daysUntil,
-  formatHeight,
+  formatHeightShort,
   formatWeightBand,
   timeAgo,
 } from '@/lib/labels';
@@ -48,13 +37,14 @@ import {
   EmptyState,
   ErrorNote,
   FieldRow,
+  SectionLabel,
   Sheet,
   Skeleton,
-  Stamp,
   TextArea,
   cx,
 } from '@/components/ui';
-import { PhotoFrame } from '@/components/photo';
+import { SkinToneDot } from '@/components/skin-tone';
+import { GenderAvatar } from '@/components/avatar';
 import { useSession, useToast } from '@/components/providers';
 
 export default function ProfileDetailPage() {
@@ -66,7 +56,6 @@ export default function ProfileDetailPage() {
   const [view, setView] = useState<ProfileView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [interestOpen, setInterestOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
 
   const code = params?.code ?? '';
@@ -101,7 +90,7 @@ export default function ProfileDetailPage() {
 
   if (error) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4">
         <BackLink />
         <ErrorNote message={error} onRetry={load} />
         <EmptyState
@@ -120,60 +109,30 @@ export default function ProfileDetailPage() {
 
   if (!view) return <DetailSkeleton />;
 
-  const { profile, connection: c, age, distanceKm, revealed } = view;
-  const photoToken = revealed.photoUrls?.[0];
+  const { profile, connection: c, age, revealed } = view;
 
   return (
-    <div className="space-y-4 pb-4">
+    <div className="mx-auto max-w-2xl space-y-4">
       <BackLink />
 
-      {/* Header — the index card's ruled top strip */}
+      {/* Header — the same identity row as a browse card, with the code as the name. */}
       <Card className="p-4">
-        <div className="flex items-start gap-3">
-          <PhotoFrame
-            token={photoToken}
-            locked={!c.canSeePhotos}
-            size="md"
-            label={c.canSeePhotos ? `Photo of ${profile.publicCode}` : 'Photo is private'}
-          />
+        <div className="flex items-start gap-3.5">
+          <GenderAvatar gender={profile.gender} size="sm" />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="code text-2xl font-bold leading-none tracking-tight">
-                {profile.publicCode}
-              </h1>
-              {profile.isVerified ? (
-                <Stamp
-                  tone="seal"
-                  title="Our office has seen the ID proof, the education certificate and confirmed the phone number."
-                >
-                  <ShieldCheck size={12} aria-hidden />
-                  Verified
-                </Stamp>
-              ) : (
-                <Stamp tone="ink" title="ID proof has not been checked by our office yet.">
-                  Not yet verified
-                </Stamp>
-              )}
-            </div>
-
+            <h1 className="code text-[22px] font-bold leading-7 tracking-tight">{profile.publicCode}</h1>
             {revealed.fullName ? (
-              <p className="mt-1.5 text-lg font-bold leading-tight">{revealed.fullName}</p>
-            ) : c.canSeeContact ? null : (
-              <p className="mt-1.5 flex items-center gap-1.5 text-[15px] text-ink-3">
-                <Lock size={15} aria-hidden />
-                Name opens with the phone number
-              </p>
-            )}
-
-            <p className="mt-1 text-[15px] font-semibold text-ink">
-              {age} yrs · {formatHeight(profile.heightCm)}
+              <p className="text-[17px] font-bold leading-6">{revealed.fullName}</p>
+            ) : null}
+            <p className="mt-0.5 text-[15px] leading-6 text-ink">
+              <span className="font-semibold">{age} yrs</span> · {formatHeightShort(profile.heightCm)}
             </p>
-            <p className="flex items-center gap-1 text-[15px] text-ink-2">
-              <MapPin size={15} aria-hidden />
-              {profile.city}
-              {distanceKm > 0 ? ` · ${distanceKm} km away` : ' · same city'}
+            <p className="flex items-center gap-1 text-[15px] leading-6 text-ink-2">
+              <MapPin size={14} className="shrink-0 text-ink-3" aria-hidden />
+              <span className="truncate">
+                {profile.city}, {profile.district}, {profile.state}
+              </span>
             </p>
-            <p className="mt-1 text-sm text-ink-3">Active {timeAgo(profile.lastActiveAt)}</p>
           </div>
 
           <button
@@ -189,111 +148,81 @@ export default function ProfileDetailPage() {
             aria-pressed={c.isShortlisted}
             aria-label={c.isShortlisted ? ACTIONS.unsave.en : ACTIONS.save.en}
             className={cx(
-              'tap grid h-11 w-11 shrink-0 place-items-center rounded-lg border-2',
+              'tap -mr-1.5 -mt-1.5 grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors duration-150 active:scale-95',
               c.isShortlisted
-                ? 'border-stamp bg-stamp-wash text-stamp'
-                : 'border-rule-strong text-ink-3 hover:bg-paper',
+                ? 'bg-stamp-wash text-stamp'
+                : 'text-ink-3 hover:bg-paper-deep hover:text-stamp',
             )}
           >
-            {c.isShortlisted ? <BookmarkCheck size={22} /> : <Bookmark size={22} />}
+            {c.isShortlisted ? <BookmarkCheck size={20} /> : <Bookmark size={20} />}
           </button>
         </div>
-
-        <StageStrip connection={c} />
       </Card>
 
-      {/* Incoming requests are answered right here, in context */}
-      {c.pendingIncoming.interest ? (
-        <IncomingPanel
-          title="This family has sent you an interest"
-          hindi="इस परिवार ने आपको रुचि भेजी है"
-          message={c.pendingIncoming.interest.message}
-          when={c.pendingIncoming.interest.createdAt}
-          acceptLabel={ACTIONS.accept}
-          busy={busy === 'respond'}
-          onAccept={() =>
-            run(
-              'respond',
-              () => api.respondToRequest(c.pendingIncoming.interest!.id, 'accept'),
-              `You are now connected with ${profile.publicCode}.`,
-            )
-          }
-          onDecline={() =>
-            run(
-              'respond',
-              () => api.respondToRequest(c.pendingIncoming.interest!.id, 'decline'),
-              'Declined. They cannot ask again for 30 days.',
-            )
-          }
-        />
-      ) : null}
-
-      {c.pendingIncoming.photo ? (
-        <IncomingPanel
-          title={`${profile.publicCode} has asked for your photo`}
-          hindi="इन्होंने आपकी फ़ोटो माँगी है"
-          message=""
-          when={c.pendingIncoming.photo.createdAt}
-          acceptLabel={ACTIONS.sharePhoto}
-          note="They get to see your photo for 7 days. You can take it back at any time."
-          busy={busy === 'respond'}
-          onAccept={() =>
-            run(
-              'respond',
-              () => api.respondToRequest(c.pendingIncoming.photo!.id, 'accept'),
-              `Photo shared with ${profile.publicCode} for 7 days.`,
-            )
-          }
-          onDecline={() =>
-            run('respond', () => api.respondToRequest(c.pendingIncoming.photo!.id, 'decline'), 'Photo not shared.')
-          }
-        />
-      ) : null}
-
+      {/* Their request for your number is answered right here */}
       {c.pendingIncoming.contact ? (
-        <IncomingPanel
-          title={`${profile.publicCode} has asked for your phone number`}
-          hindi="इन्होंने आपका फ़ोन नंबर माँगा है"
-          message=""
-          when={c.pendingIncoming.contact.createdAt}
-          acceptLabel={ACTIONS.shareContact}
-          note="Their number opens for you only after they share theirs as well."
-          busy={busy === 'respond'}
-          onAccept={() =>
-            run(
-              'respond',
-              () => api.respondToRequest(c.pendingIncoming.contact!.id, 'accept'),
-              `Your number is now with ${profile.publicCode}.`,
-            )
-          }
-          onDecline={() =>
-            run(
-              'respond',
-              () => api.respondToRequest(c.pendingIncoming.contact!.id, 'decline'),
-              'Number not shared.',
-            )
-          }
-        />
+        <Card className="bg-stamp-wash p-4 ring-stamp-ring!">
+          <p className="text-[15px] font-bold leading-6 text-stamp-ink">
+            {profile.publicCode} has asked for your phone number
+            <span className="hindi block font-normal text-ink-2">इन्होंने आपका फ़ोन नंबर माँगा है</span>
+          </p>
+          <p className="mt-0.5 text-[13px] leading-5 text-ink-3">{timeAgo(c.pendingIncoming.contact.createdAt)}</p>
+          <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
+            <Button
+              variant="primary"
+              fullWidth
+              loading={busy === 'respond'}
+              label={ACTIONS.shareContact}
+              onClick={() =>
+                run(
+                  'respond',
+                  () => api.respondToRequest(c.pendingIncoming.contact!.id, 'accept'),
+                  `Your number is now with ${profile.publicCode}.`,
+                )
+              }
+            />
+            <Button
+              variant="secondary"
+              loading={busy === 'respond'}
+              label={ACTIONS.decline}
+              onClick={() =>
+                run(
+                  'respond',
+                  () => api.respondToRequest(c.pendingIncoming.contact!.id, 'decline'),
+                  'Number not shared.',
+                )
+              }
+            />
+          </div>
+        </Card>
       ) : null}
 
       {/* Biodata — the ruled sheet */}
       <Card className="p-4">
-        <SectionTitle en="Biodata" hi="बायोडाटा" />
-        <div className="mt-2">
+        <SectionLabel en="Biodata" hi="बायोडाटा" />
+        <div className="mt-1">
           <FieldRow label="Age" hindi="आयु">
             {age} years
           </FieldRow>
           <FieldRow label="Height" hindi="कद">
-            {formatHeight(profile.heightCm)}
+            {formatHeightShort(profile.heightCm)}
           </FieldRow>
           <FieldRow label="Weight" hindi="वज़न">
             {formatWeightBand(profile.weightBand)}
           </FieldRow>
+          <FieldRow label="Skin tone" hindi="रंग">
+            <span className="inline-flex items-center gap-2">
+              <SkinToneDot tone={profile.complexion} />
+              {COMPLEXION_LABELS[profile.complexion].en}
+            </span>
+          </FieldRow>
           <FieldRow label="Education" hindi="शिक्षा">
             {profile.education}
-            <span className="block text-sm font-normal text-ink-3">
-              {EDUCATION_LEVEL_LABELS[profile.educationLevel].en}
-            </span>
+            {profile.educationLevel !== 'other' ? (
+              <span className="block text-sm font-normal text-ink-3">
+                {EDUCATION_LEVEL_LABELS[profile.educationLevel].en}
+              </span>
+            ) : null}
           </FieldRow>
           <FieldRow label="Work" hindi="काम">
             {profile.occupation}
@@ -309,14 +238,14 @@ export default function ProfileDetailPage() {
           <FieldRow label="Religion" hindi="धर्म">
             {RELIGION_LABELS[profile.religion].en}
           </FieldRow>
+          <FieldRow label="Category" hindi="श्रेणी">
+            {CATEGORY_LABELS[profile.category].en}
+          </FieldRow>
           <FieldRow label="Jati" hindi="जाति">
             {profile.community}
           </FieldRow>
           <FieldRow label="Marital status" hindi="वैवाहिक स्थिति">
             {MARITAL_LABELS[profile.maritalStatus].en}
-          </FieldRow>
-          <FieldRow label="Food" hindi="खान-पान">
-            {DIET_LABELS[profile.diet].en}
           </FieldRow>
           <FieldRow label="Manglik" hindi="मांगलिक">
             {MANGLIK_LABELS[profile.manglik].en}
@@ -335,152 +264,27 @@ export default function ProfileDetailPage() {
         </div>
       </Card>
 
-      {profile.about ? (
-        <Card className="p-4">
-          <SectionTitle en="About" hi="परिचय" />
-          <p className="mt-2 text-[15px] leading-relaxed text-ink">{profile.about}</p>
-        </Card>
-      ) : null}
-
-      <Card className="p-4">
-        <SectionTitle en="Family" hi="परिवार" />
-        {profile.familyBrief ? (
-          <p className="mt-2 text-[15px] leading-relaxed text-ink">{profile.familyBrief}</p>
-        ) : null}
-
-        {revealed.familyDetails ? (
-          <div className="mt-3 border-t-2 border-dotted border-rule pt-3">
-            <p className="mb-1 flex items-center gap-1.5 text-sm font-bold text-seal">
-              <Handshake size={16} aria-hidden />
-              Full family details — opened when you connected
-            </p>
-            <p className="text-[15px] leading-relaxed text-ink">{revealed.familyDetails}</p>
-          </div>
-        ) : (
-          <LockedNote
-            text="Full family details open after this family accepts your interest."
-            hindi="पूरा पारिवारिक विवरण रुचि स्वीकार होने के बाद खुलता है।"
-          />
-        )}
-      </Card>
-
-      {/* Photo — stage 3 */}
-      <Card className="p-4">
-        <SectionTitle en="Photo" hi="फ़ोटो" />
-        {c.canSeePhotos && revealed.photoUrls?.length ? (
-          <>
-            <p className="mt-1 text-sm font-semibold text-seal">
-              Shared with you. Please do not save or forward it.
-            </p>
-            <div className="mt-2 flex gap-2 overflow-x-auto">
-              {revealed.photoUrls.map((token, i) => (
-                <PhotoFrame
-                  key={i}
-                  token={token}
-                  locked={false}
-                  size="md"
-                  label={`Photo ${i + 1} of ${profile.publicCode}`}
-                  className="h-40 w-32"
-                />
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="mt-2 flex items-start gap-3">
-            <PhotoFrame token={undefined} locked size="md" />
-            <div className="flex-1">
-              {c.stage !== 'connected' ? (
-                <LockedNote
-                  text="Photos open only after both families connect, and then only if this family approves."
-                  hindi="फ़ोटो तभी खुलती है जब दोनों परिवार जुड़ें और यह परिवार मंज़ूरी दे।"
-                />
-              ) : c.pendingOutgoing.photo ? (
-                <WaitingNote text={`Waiting for ${profile.publicCode} to approve your photo request.`} />
-              ) : (
-                <>
-                  <p className="text-[15px] text-ink-2">
-                    You can ask this family for a photo. They decide, and it stays with you for 7
-                    days only.
-                  </p>
-                  <Button
-                    variant="primary"
-                    className="mt-3"
-                    loading={busy === 'photo'}
-                    icon={<ImageIcon size={20} aria-hidden />}
-                    label={ACTIONS.askPhoto}
-                    onClick={() =>
-                      run(
-                        'photo',
-                        () => api.sendRequest(profile.id, 'photo'),
-                        'Photo request sent. They will decide.',
-                      )
-                    }
-                  />
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Owner-side view of what they gave away */}
-        {c.photoGrantToThem ? (
-          <div className="mt-3 border-2 border-seal/40 bg-seal-wash px-3 py-2.5 sm:flex sm:items-center sm:gap-3">
-            <p className="flex-1 text-[15px] font-semibold text-seal">
-              Photo shared with {profile.publicCode}
-              {c.photoGrantToThem.expiresAt ? (
-                <span className="font-normal">
-                  {' '}
-                  · expires in {daysUntil(c.photoGrantToThem.expiresAt)} days
-                </span>
-              ) : null}
-            </p>
-            <Button
-              variant="danger"
-              className="mt-2 w-full sm:mt-0 sm:w-auto"
-              loading={busy === 'revoke'}
-              icon={<Undo2 size={18} aria-hidden />}
-              onClick={() =>
-                run(
-                  'revoke',
-                  () => api.revokeGrant(c.photoGrantToThem!.id),
-                  `${profile.publicCode} can no longer see your photo.`,
-                )
-              }
-            >
-              Take back
-            </Button>
-          </div>
-        ) : null}
-      </Card>
-
-      {/* Contact — stage 4, the two-sided gate */}
-      <Card className="p-4">
-        <SectionTitle en="Phone number" hi="फ़ोन नंबर" />
-        <ContactPanel
-          view={view}
-          busy={busy}
-          onAsk={() =>
-            run(
-              'contact',
-              () => api.sendRequest(profile.id, 'contact'),
-              'Number request sent. They will decide.',
-            )
-          }
-        />
-      </Card>
-
-      {/* Stage actions */}
-      <div className="sticky bottom-20 z-30 md:bottom-4">
-        <Card className="border-2 border-ink p-3 shadow-lg">
+      {/* The one action */}
+      <div
+        className="sticky z-30 md:bottom-4"
+        style={{ bottom: 'calc(76px + env(safe-area-inset-bottom, 0px) + 8px)' }}
+      >
+        <Card className="p-3 shadow-[var(--shadow-e3)] ring-rule-strong!">
           <StageActions
             view={view}
             busy={busy}
-            onSendInterest={() => setInterestOpen(true)}
+            onRequest={() =>
+              run(
+                'contact',
+                () => api.sendRequest(profile.id, 'contact'),
+                `Number requested from ${profile.publicCode}. They will decide.`,
+              )
+            }
             onWithdraw={() =>
               run(
                 'withdraw',
-                () => api.withdrawRequest(c.pendingOutgoing.interest!.id),
-                'Interest taken back.',
+                () => api.withdrawRequest(c.pendingOutgoing.contact!.id),
+                'Request taken back.',
               )
             }
           />
@@ -490,26 +294,12 @@ export default function ProfileDetailPage() {
       <button
         type="button"
         onClick={() => setReportOpen(true)}
-        className="tap flex w-full items-center justify-center gap-2 text-[15px] font-semibold text-oxide underline"
+        className="tap mx-auto flex min-h-12 items-center justify-center gap-2 rounded-md px-4 text-[15px] font-semibold text-ink-2 hover:bg-paper-deep hover:text-oxide"
       >
-        <Flag size={18} aria-hidden />
+        <Flag size={17} aria-hidden />
         {ACTIONS.report.en}
-        <span className="hindi font-normal">{ACTIONS.report.hi}</span>
+        <span className="hindi font-normal text-ink-3">{ACTIONS.report.hi}</span>
       </button>
-
-      <InterestSheet
-        open={interestOpen}
-        onClose={() => setInterestOpen(false)}
-        code={profile.publicCode}
-        onSend={async (message) => {
-          setInterestOpen(false);
-          await run(
-            'interest',
-            () => api.sendRequest(profile.id, 'interest', message),
-            `Interest sent to ${profile.publicCode}.`,
-          );
-        }}
-      />
 
       <ReportSheet
         open={reportOpen}
@@ -542,268 +332,59 @@ function BackLink() {
   );
 }
 
-function SectionTitle({ en, hi }: { en: string; hi: string }) {
-  return (
-    <h2 className="border-b-2 border-gold-soft pb-1 text-[15px] font-bold uppercase tracking-wide">
-      {en}
-      <span className="hindi ml-2 font-normal normal-case tracking-normal text-ink-3">{hi}</span>
-    </h2>
-  );
-}
-
-function LockedNote({ text, hindi }: { text: string; hindi?: string }) {
-  return (
-    <p className="mt-2 flex items-start gap-2 border-l-4 border-rule-strong bg-paper px-3 py-2 text-[15px] text-ink-2">
-      <Lock size={17} className="mt-0.5 shrink-0 text-ink-3" aria-hidden />
-      <span>
-        {text}
-        {hindi ? <span className="hindi block text-ink-3">{hindi}</span> : null}
-      </span>
-    </p>
-  );
-}
-
-function WaitingNote({ text }: { text: string }) {
-  return (
-    <p className="mt-2 flex items-start gap-2 border-l-4 border-stamp bg-stamp-wash px-3 py-2 text-[15px] font-medium text-stamp-ink">
-      <Hourglass size={17} className="mt-0.5 shrink-0" aria-hidden />
-      {text}
-    </p>
-  );
-}
-
-/**
- * The four gates, in order. A step lights up only once it is actually open —
- * the strip is the answer to "how far along are we with this family?".
- */
-function StageStrip({ connection: c }: { connection: ProfileView['connection'] }) {
-  const steps = [
-    { key: 'interest', en: 'Interest', hi: 'रुचि' },
-    { key: 'connected', en: 'Connected', hi: 'जुड़े' },
-    { key: 'photo', en: 'Photo', hi: 'फ़ोटो' },
-    { key: 'contact', en: 'Number', hi: 'नंबर' },
-  ];
-  let reached =
-    c.stage === 'connected'
-      ? 2
-      : c.stage === 'interest_sent' || c.stage === 'interest_received'
-        ? 1
-        : 0;
-  if (reached === 2 && c.canSeePhotos) reached = 3;
-  if (reached === 3 && c.canSeeContact) reached = 4;
-
-  return (
-    <ol className="mt-3 flex gap-1 border-t border-rule pt-3">
-      {steps.map((s, i) => (
-        <li key={s.key} className="flex-1">
-          <div className={cx('h-1.5 rounded-full', i < reached ? 'bg-stamp' : 'bg-paper-deep')} />
-          <span
-            className={cx(
-              'mt-1 block text-[11px] font-semibold leading-tight',
-              i < reached ? 'text-stamp' : 'text-ink-3',
-            )}
-          >
-            {s.en}
-            <span className="hindi block font-normal">{s.hi}</span>
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function IncomingPanel({
-  title,
-  hindi,
-  message,
-  when,
-  acceptLabel,
-  note,
-  busy,
-  onAccept,
-  onDecline,
-}: {
-  title: string;
-  hindi: string;
-  message: string;
-  when: string;
-  acceptLabel: { en: string; hi: string };
-  note?: string;
-  busy: boolean;
-  onAccept: () => void;
-  onDecline: () => void;
-}) {
-  return (
-    <Card className="border-2 border-stamp bg-stamp-wash p-4">
-      <p className="text-[15px] font-bold text-stamp-ink">
-        {title}
-        <span className="hindi block font-normal text-ink-2">{hindi}</span>
-      </p>
-      <p className="mt-1 text-sm text-ink-3">{timeAgo(when)}</p>
-      {message ? (
-        <blockquote className="mt-2 border-l-4 border-stamp/40 bg-card px-3 py-2 text-[15px] italic text-ink">
-          &ldquo;{message}&rdquo;
-        </blockquote>
-      ) : null}
-      {note ? <p className="mt-2 text-sm text-ink-2">{note}</p> : null}
-      <div className="mt-3 flex gap-2">
-        <Button variant="primary" fullWidth loading={busy} label={acceptLabel} onClick={onAccept} />
-        <Button variant="danger" loading={busy} label={ACTIONS.decline} onClick={onDecline} />
-      </div>
-    </Card>
-  );
-}
-
-/**
- * The mutual-consent gate, spelled out. Both halves are always shown — a parent
- * has to be able to see that they gave, and that the other side has not yet.
- */
-function ContactPanel({
-  view,
-  busy,
-  onAsk,
-}: {
-  view: ProfileView;
-  busy: string | null;
-  onAsk: () => void;
-}) {
-  const { connection: c, revealed, profile } = view;
-
-  if (c.canSeeContact && revealed.phone) {
-    return (
-      <div className="mt-2">
-        <p className="flex items-center gap-2 text-sm font-bold text-seal">
-          <ShieldCheck size={16} aria-hidden />
-          Both families have shared. You may call now.
-        </p>
-        <a
-          href={`tel:${revealed.phone}`}
-          className="code tap mt-2 flex items-center justify-center gap-2 border-2 border-seal bg-seal-wash py-3 text-xl font-bold text-seal"
-        >
-          <Phone size={22} aria-hidden />
-          {revealed.phone.replace('+91', '+91 ')}
-        </a>
-        {revealed.exactAddress ? (
-          <p className="mt-2 flex items-start gap-2 text-[15px] text-ink-2">
-            <MapPin size={17} className="mt-0.5 shrink-0" aria-hidden />
-            {revealed.exactAddress}
-          </p>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-2">
-      <p className="code text-xl font-bold text-ink-3">{revealed.phoneMasked}</p>
-
-      <ul className="mt-3 space-y-2">
-        <li className="flex items-center gap-2 text-[15px]">
-          <StatusDot on={c.theySharedContact} />
-          <span className={c.theySharedContact ? 'text-ink' : 'text-ink-2'}>
-            {profile.publicCode} {c.theySharedContact ? 'has shared their number' : 'has not shared yet'}
-          </span>
-        </li>
-        <li className="flex items-center gap-2 text-[15px]">
-          <StatusDot on={c.iSharedContact} />
-          <span className={c.iSharedContact ? 'text-ink' : 'text-ink-2'}>
-            You {c.iSharedContact ? 'have shared your number' : 'have not shared yours yet'}
-          </span>
-        </li>
-      </ul>
-
-      {c.stage !== 'connected' ? (
-        <LockedNote
-          text="Phone numbers open only after both families accept an interest and then both agree to share."
-          hindi="नंबर तभी खुलते हैं जब दोनों परिवार सहमत हों।"
-        />
-      ) : c.theySharedContact && !c.iSharedContact ? (
-        <WaitingNote
-          text={`${profile.publicCode} has shared their number. It opens for you once you share yours too — they will ask you, or you can ask them.`}
-        />
-      ) : c.iSharedContact && !c.theySharedContact ? (
-        <WaitingNote text={`Waiting for ${profile.publicCode} to also share their number.`} />
-      ) : c.pendingOutgoing.contact ? (
-        <WaitingNote text={`Waiting for ${profile.publicCode} to answer your number request.`} />
-      ) : (
-        <>
-          <p className="mt-3 text-[15px] text-ink-2">
-            Numbers open only when both sides agree. Nothing is shown one-sided.
-          </p>
-          <Button
-            variant="primary"
-            className="mt-3"
-            loading={busy === 'contact'}
-            icon={<Phone size={20} aria-hidden />}
-            label={ACTIONS.askContact}
-            onClick={onAsk}
-          />
-        </>
-      )}
-    </div>
-  );
-}
-
-function StatusDot({ on }: { on: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={cx(
-        'grid h-5 w-5 shrink-0 place-items-center rounded-full border-2',
-        on ? 'border-seal bg-seal text-white' : 'border-rule-strong bg-card',
-      )}
-    >
-      {on ? <ShieldCheck size={12} strokeWidth={3} /> : null}
-    </span>
-  );
-}
-
-/** The primary action for the current stage — and only that stage. */
+/** The bar at the bottom: one button, or the number once it is open. */
 function StageActions({
   view,
   busy,
-  onSendInterest,
+  onRequest,
   onWithdraw,
 }: {
   view: ProfileView;
   busy: string | null;
-  onSendInterest: () => void;
+  onRequest: () => void;
   onWithdraw: () => void;
 }) {
-  const { connection: c, profile } = view;
+  const { connection: c, profile, revealed } = view;
 
-  if (c.stage === 'connected') {
+  if (c.stage === 'number_shared' && revealed.phone) {
     return (
-      <p className="flex items-center justify-center gap-2 py-1 text-[15px] font-bold text-seal">
-        <Handshake size={20} aria-hidden />
-        You are connected with {profile.publicCode}
-        <span className="hindi font-normal text-ink-2">आप जुड़े हुए हैं</span>
-      </p>
+      <div>
+        <p className="mb-2 text-center text-sm font-semibold text-seal">
+          {profile.publicCode} shared their number with you.
+        </p>
+        <a
+          href={`tel:${revealed.phone}`}
+          className="code tap flex min-h-12 items-center justify-center gap-2 rounded-md bg-seal text-[17px] font-bold text-white shadow-[var(--shadow-e1)] transition-all hover:brightness-110 active:scale-[0.985]"
+        >
+          <Phone size={19} aria-hidden />
+          {revealed.phone.replace('+91', '+91 ')}
+        </a>
+      </div>
     );
   }
 
-  if (c.stage === 'interest_sent') {
+  if (c.stage === 'request_sent') {
     return (
       <div className="sm:flex sm:items-center sm:gap-3">
         <p className="flex-1 text-[15px] font-medium text-ink-2">
-          Interest sent. Waiting for their answer.
-          <span className="hindi block text-ink-3">रुचि भेजी गई। उत्तर की प्रतीक्षा है।</span>
+          Number requested. Waiting for their answer.
+          <span className="hindi block text-ink-3">नंबर माँगा गया। उत्तर की प्रतीक्षा है।</span>
         </p>
         <Button
-          variant="danger"
+          variant="secondary"
           className="mt-2 w-full sm:mt-0 sm:w-auto"
           loading={busy === 'withdraw'}
-          label={ACTIONS.withdrawInterest}
+          label={ACTIONS.withdrawRequest}
           onClick={onWithdraw}
         />
       </div>
     );
   }
 
-  if (c.stage === 'interest_received') {
+  if (c.stage === 'request_received') {
     return (
       <p className="text-center text-[15px] font-medium text-stamp-ink">
-        Answer their interest above to connect.
+        Answer their request above.
       </p>
     );
   }
@@ -814,20 +395,11 @@ function StageActions({
       <p className="flex items-start gap-2 text-[15px] font-medium text-oxide">
         <Clock size={20} className="mt-0.5 shrink-0" aria-hidden />
         <span>
-          This family declined earlier. You can send interest again in {days}{' '}
-          {days === 1 ? 'day' : 'days'}.
+          This family declined earlier. You can ask again in {days} {days === 1 ? 'day' : 'days'}.
           <span className="hindi block font-normal text-ink-2">
-            इस परिवार ने मना किया था। आप {days} दिन बाद फिर रुचि भेज सकते हैं।
+            इस परिवार ने मना किया था। आप {days} दिन बाद फिर माँग सकते हैं।
           </span>
         </span>
-      </p>
-    );
-  }
-
-  if (c.stage === 'declined_by_me') {
-    return (
-      <p className="text-center text-[15px] font-medium text-ink-2">
-        You declined this family&rsquo;s interest.
       </p>
     );
   }
@@ -836,61 +408,11 @@ function StageActions({
     <Button
       variant="primary"
       fullWidth
-      loading={busy === 'interest'}
-      label={ACTIONS.sendInterest}
-      onClick={onSendInterest}
+      loading={busy === 'contact'}
+      icon={<Phone size={20} aria-hidden />}
+      label={ACTIONS.askContact}
+      onClick={onRequest}
     />
-  );
-}
-
-function InterestSheet({
-  open,
-  onClose,
-  code,
-  onSend,
-}: {
-  open: boolean;
-  onClose: () => void;
-  code: string;
-  onSend: (message: string) => void;
-}) {
-  const [message, setMessage] = useState('');
-  return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title={`Send interest to ${code}`}
-      hindi="रुचि भेजें"
-      footer={
-        <Button
-          variant="primary"
-          fullWidth
-          label={ACTIONS.sendInterest}
-          onClick={() => {
-            onSend(message.trim());
-            setMessage('');
-          }}
-        />
-      }
-    >
-      <p className="text-[15px] text-ink-2">
-        They will see your profile code and this message. Your photo and number stay private.
-        <span className="hindi block text-ink-3">
-          उन्हें आपका कोड और यह संदेश दिखेगा। फ़ोटो और नंबर निजी रहेंगे।
-        </span>
-      </p>
-      <TextArea
-        className="mt-4"
-        label="Message (optional)"
-        hindi="संदेश (वैकल्पिक)"
-        rows={4}
-        maxLength={200}
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="We liked the biodata. Family background looks similar. Please consider."
-        hint="Do not write your phone number here."
-      />
-    </Sheet>
   );
 }
 
@@ -942,8 +464,10 @@ function ReportSheet({
             type="button"
             onClick={() => setReason(p)}
             className={cx(
-              'tap rounded-lg border-2 px-3 py-2 text-left text-[15px]',
-              reason === p ? 'border-oxide bg-oxide-wash text-oxide' : 'border-rule-strong bg-card',
+              'tap rounded-full px-4 py-2 text-left text-[15px] transition-colors duration-150',
+              reason === p
+                ? 'bg-oxide-wash text-oxide ring-1 ring-oxide ring-inset'
+                : 'bg-card ring-1 ring-rule-strong ring-inset hover:bg-paper',
             )}
           >
             {p}
@@ -967,19 +491,17 @@ function DetailSkeleton() {
   return (
     <div className="space-y-4" aria-busy="true" aria-label="Loading profile">
       <Skeleton className="h-6 w-40" />
-      <div className="border border-rule bg-card p-4">
+      <div className="rounded-2xl bg-card p-4 ring-1 ring-rule">
         <div className="flex gap-3">
-          <Skeleton className="h-28 w-24" />
+          <Skeleton className="h-16 w-16" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-7 w-32" />
-            <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-2/3" />
             <Skeleton className="h-4 w-1/2" />
           </div>
         </div>
-        <Skeleton className="mt-4 h-8 w-full" />
       </div>
-      <div className="border border-rule bg-card p-4">
+      <div className="rounded-2xl bg-card p-4 ring-1 ring-rule">
         <Skeleton className="h-5 w-28" />
         <div className="mt-3 space-y-3">
           {Array.from({ length: 6 }, (_, i) => (

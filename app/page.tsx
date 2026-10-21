@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { BookHeart } from 'lucide-react';
+import { BrandMark } from '@/components/nav';
 import { useSession } from '@/components/providers';
 
 /**
@@ -23,11 +23,11 @@ export default function Home() {
 
   return (
     <main className="grid min-h-dvh place-items-center px-6 text-center">
-      <div>
-        <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-linear-to-br from-stamp to-stamp-ink text-gold-soft shadow-card">
-          <BookHeart size={30} aria-hidden />
+      <div style={{ animation: 'rishta-pop-in 400ms var(--ease-out-soft)' }}>
+        <div className="mx-auto mb-5 w-fit">
+          <BrandMark size="lg" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight">Rishta Register</h1>
+        <h1 className="display text-3xl">Rishta</h1>
         <p className="hindi text-ink-3">रिश्ता रजिस्टर</p>
         <p className="mt-3 text-[15px] text-ink-2">Opening the register…</p>
       </div>

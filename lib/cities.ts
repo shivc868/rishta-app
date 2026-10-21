@@ -23,44 +23,17 @@ export interface City {
   lng: number;
 }
 
-/** All 36 states + union territories, for the state dropdown. */
+/**
+ * States open for listing right now. The service starts regional — Himachal,
+ * Punjab, J&K and Chandigarh — and widens from here; the admin dataset behind
+ * the district/tehsil dropdowns already covers all 36, so adding a state is
+ * one line in this list.
+ */
 export const INDIA_STATES = [
-  'Andaman and Nicobar Islands',
-  'Andhra Pradesh',
-  'Arunachal Pradesh',
-  'Assam',
-  'Bihar',
   'Chandigarh',
-  'Chhattisgarh',
-  'Dadra and Nagar Haveli and Daman and Diu',
-  'Delhi',
-  'Goa',
-  'Gujarat',
-  'Haryana',
   'Himachal Pradesh',
   'Jammu and Kashmir',
-  'Jharkhand',
-  'Karnataka',
-  'Kerala',
-  'Ladakh',
-  'Lakshadweep',
-  'Madhya Pradesh',
-  'Maharashtra',
-  'Manipur',
-  'Meghalaya',
-  'Mizoram',
-  'Nagaland',
-  'Odisha',
-  'Puducherry',
   'Punjab',
-  'Rajasthan',
-  'Sikkim',
-  'Tamil Nadu',
-  'Telangana',
-  'Tripura',
-  'Uttar Pradesh',
-  'Uttarakhand',
-  'West Bengal',
 ] as const;
 
 /** Compact wire format: { "State": [["City", lat, lng], ...] } */

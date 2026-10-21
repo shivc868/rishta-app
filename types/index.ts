@@ -25,6 +25,16 @@ export type MaritalStatus = 'never_married' | 'divorced' | 'widowed' | 'annulled
 
 export type Diet = 'vegetarian' | 'eggetarian' | 'non_vegetarian' | 'jain_vegetarian';
 
+/** Complexion, in the terms North-Indian biodata sheets actually use. */
+export type Complexion =
+  | 'very_fair'
+  | 'fair'
+  | 'medium'
+  | 'wheatish'
+  | 'wheatish_brown'
+  | 'dusky'
+  | 'dark';
+
 export type Manglik = 'yes' | 'no' | 'partial' | 'unknown';
 
 /**
@@ -58,7 +68,11 @@ export type EducationLevel =
   | 'bachelors'
   | 'masters'
   | 'doctorate'
-  | 'professional';
+  | 'professional'
+  /** Teacher training / eligibility: JBT, D.El.Ed, B.Ed, HP TET, PAT. */
+  | 'teaching'
+  /** Anything not in the list; the free-text `education` says what. */
+  | 'other';
 
 /**
  * Job type — the filter grouping. Kept to six plain options a parent can pick
@@ -83,6 +97,9 @@ export type Religion =
   | 'buddhist'
   | 'other';
 
+/** Reservation category, asked right after religion — the box every government form has. */
+export type SocialCategory = 'general' | 'obc' | 'sc' | 'st';
+
 /** Who the account holder is filling the biodata for. Most users are parents. */
 export type CreatedFor = 'self' | 'son' | 'daughter' | 'brother' | 'sister' | 'relative';
 
@@ -105,6 +122,7 @@ export interface Profile {
   heightCm: number;
   /** 3-kg band as "54-57" (last band "138-140"). Coarse on purpose, like income. */
   weightBand: string;
+  complexion: Complexion;
   /** Free text as written on the biodata sheet, e.g. "M.A. Hindi". */
   education: string;
   educationLevel: EducationLevel;
@@ -113,7 +131,8 @@ export interface Profile {
   occupationCategory: OccupationCategory;
   incomeBand: IncomeBand;
   religion: Religion;
-  /** Jati / caste, from the per-religion list or typed via "Other". */
+  category: SocialCategory;
+  /** Jati / caste, free text as the family writes it. */
   community: string;
   /** Indian state / UT → district → tehsil, from the official hierarchy. */
   state: string;
@@ -137,6 +156,9 @@ export interface Profile {
   familyBrief: string;
   status: ProfileStatus;
   isVerified: boolean;
+  /** True for generated demo rows (lib/mock-data.ts). Lets us wipe dummy data
+      in one filter without touching profiles real families created. */
+  isSeed: boolean;
   createdAt: string;
   /** Drives the "recently active" sort and the "active 2 days ago" chip. */
   lastActiveAt: string;
@@ -200,6 +222,8 @@ export interface Account {
   phone: string;
   createdAt: string;
   ownedProfileIds: string[];
+  /** See Profile.isSeed. */
+  isSeed?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,38 +231,31 @@ export interface Account {
 // ---------------------------------------------------------------------------
 
 /**
- * The connection state machine, as seen from the viewer's side.
+ * The one flow between two families: ask for the number, get an answer.
  *
- *   browsing -> interest_sent | interest_received -> connected
- *   connected -> (photo grants) -> (mutual contact grants)
+ *   browsing -> request_sent | request_received -> number_shared
  *
- * `stage` is the furthest point reached; photo/contact unlocks are tracked
- * separately because they are independent of each other and are per-direction.
+ * Only a `contact` request is ever created; the other request types stay in
+ * the enum so old rows still parse, but the app never offers them.
  */
 export type ConnectionStage =
   | 'browsing'
-  | 'interest_sent'
-  | 'interest_received'
-  | 'connected'
+  | 'request_sent'
+  | 'request_received'
+  | 'number_shared'
   | 'declined_by_them'
   | 'declined_by_me';
 
 export interface ConnectionState {
   otherProfileId: string;
   stage: ConnectionStage;
-  /** The pending or resolved interest request, if any. */
-  interest: Request | null;
-  /** Viewer may see the other side's photos. */
-  canSeePhotos: boolean;
-  /** Other side may see the viewer's photos. */
-  theyCanSeeMyPhotos: boolean;
-  photoGrantToThem: Grant | null;
-  photoGrantToMe: Grant | null;
+  /** The pending or last-resolved number request between the two, if any. */
+  request: Request | null;
   /** Viewer approved sharing their own number. */
   iSharedContact: boolean;
-  /** Other side approved sharing their number. */
+  /** Other side approved sharing their number — the viewer can see it. */
   theySharedContact: boolean;
-  /** True only when both of the above are true — the mutual-consent gate. */
+  /** Same as theySharedContact; kept as the name components read. */
   canSeeContact: boolean;
   /** Open requests keyed by type, so buttons never offer a duplicate. */
   pendingOutgoing: Partial<Record<RequestType, Request>>;
@@ -277,13 +294,17 @@ export interface BrowseCard {
   distanceKm: number;
   isShortlisted: boolean;
   stage: ConnectionStage;
+  /** True when this profile satisfies every one of the viewer's partner preferences. */
+  isExact?: boolean;
+  /** True when, in addition, the viewer satisfies this profile's preferences. */
+  isMutual?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // Filters & queries
 // ---------------------------------------------------------------------------
 
-export type SortOrder = 'newest' | 'recently_active';
+export type SortOrder = 'best_match' | 'newest' | 'recently_active';
 
 /** Every field optional — the browse page serialises this to URL search params. */
 export interface ProfileFilters {
@@ -296,7 +317,7 @@ export interface ProfileFilters {
   occupationCategory?: OccupationCategory[];
   incomeBand?: IncomeBand[];
   religion?: Religion[];
-  community?: string[];
+  category?: SocialCategory[];
   /** Location cascade — each level narrows the next, like the wizard. */
   state?: string;
   district?: string;
@@ -304,8 +325,25 @@ export interface ProfileFilters {
   city?: string;
   maxDistanceKm?: number;
   manglik?: Manglik[];
+  diet?: Diet[];
   verifiedOnly?: boolean;
   sort?: SortOrder;
+}
+
+/**
+ * Partner preferences — what the family wants on the other side. Same shape
+ * as a filter set, minus the sort: an empty list or an absent key means
+ * "doesn't matter". The Matches tab shows only profiles that satisfy EVERY
+ * criterion here (an exact match, the way Shaadi's "Matches" works), and a
+ * 2-way match is one where both families' preferences are satisfied.
+ */
+export type PartnerPreferences = Omit<ProfileFilters, 'sort'>;
+
+/** One row per profile. Absent row = defaults derived from the biodata. */
+export interface PartnerPreference {
+  profileId: string;
+  prefs: PartnerPreferences;
+  updatedAt: string;
 }
 
 export interface Paginated<T> {
@@ -327,6 +365,8 @@ export interface ConnectionSummary {
   age: number;
   connection: ConnectionState;
   connectedAt: string;
+  /** Their number, present only when they shared it with the viewer. */
+  phone?: string;
 }
 
 export interface ShortlistView {

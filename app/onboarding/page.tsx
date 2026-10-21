@@ -1,147 +1,211 @@
-'use client';
+'use client'
 
 /**
- * The biodata wizard. Modelled on the printed sheet families already fill in,
- * in the same order they are used to: basic details, then education and work,
- * then family and community, then the private page that only the office sees.
+ * The biodata form. One page, modelled on the printed sheet families already
+ * fill in and in the same order: basic details, then education and work, then
+ * community and city. No wizard — everything is visible at once, so a family
+ * can see how much is left and go back to fix a line without losing their place.
  *
- * Step 4 leads with what stays private, before asking for any of it.
+ * Layout: three numbered cards, each with its own header strip, a 3-segment
+ * progress bar that fills as a card is completed, and one sticky action bar.
+ * Every label is English + Hindi on a single line so a field reads as one
+ * thing to fill, not a heading with a sub-heading.
  */
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Check, ClipboardCheck } from 'lucide-react';
-import * as api from '@/lib/api';
-import { ApiError, type ProfileDraft } from '@/lib/api';
-import { Button, Card, Select, TextField, cx } from '@/components/ui';
-import { StateDistrictTehsilField } from '@/components/city-field';
-import { useSession, useToast } from '@/components/providers';
+import {useEffect, useMemo, useState} from 'react'
+import {useRouter} from 'next/navigation'
+import {Check, CircleAlert} from 'lucide-react'
+import * as api from '@/lib/api'
+import {ApiError, type ProfileDraft} from '@/lib/api'
+import {Button, Card, Select, Sheet, TextField, cx} from '@/components/ui'
+import {SkinTonePicker} from '@/components/skin-tone'
+import {StateDistrictTehsilField} from '@/components/city-field'
+import {DobField} from '@/components/dob-field'
+import {useSession, useToast} from '@/components/providers'
 import {
   EDUCATION_LEVEL_LABELS,
-  JATI_OPTIONS,
   RELIGION_LABELS,
+  CATEGORY_LABELS,
   EDUCATION_SHORT,
   INCOME_LABELS,
   MANGLIK_LABELS,
   MARITAL_LABELS,
   OCCUPATION_LABELS,
   WEIGHT_BANDS,
-  formatHeight,
+  HEIGHT_OPTIONS,
   formatWeightBand,
-} from '@/lib/labels';
+} from '@/lib/labels'
 import type {
   CreatedFor,
   Religion,
+  SocialCategory,
   Diet,
   EducationLevel,
   Gender,
   IncomeBand,
   Manglik,
+  Complexion,
   MaritalStatus,
   OccupationCategory,
-} from '@/types';
+} from '@/types'
 
-const STEPS = [
-  { en: 'Basic details', hi: 'बुनियादी जानकारी' },
-  { en: 'Education & work', hi: 'शिक्षा और काम' },
-  { en: 'Community & city', hi: 'समाज और शहर' },
-];
+type Draft = Partial<ProfileDraft> & {createdFor: CreatedFor}
 
-type Draft = Partial<ProfileDraft> & { createdFor: CreatedFor; jatiChoice?: string };
+/** Legal marriage age: 21 for a boy, 18 for a girl. */
+function minAgeFor(gender: Gender | undefined): number {
+  return gender === 'male' ? 21 : 18
+}
+
+/** What each validated field is called in the "you missed this" popup, in form order. */
+const FIELD_NAMES: Record<string, string> = {
+  dob: 'Date of birth',
+  heightCm: 'Height',
+  weightBand: 'Weight',
+  complexion: 'Skin tone',
+  educationLevel: 'Education',
+  education: 'Education',
+  occupationCategory: 'Job type',
+  incomeBand: 'Monthly income',
+  religion: 'Religion',
+  category: 'Category',
+  community: 'Jati',
+  city: 'State, district and tehsil',
+}
+
+/** Scroll a field into view and move focus into it, so the popup lands the parent on the gap. */
+function goToField(key: string) {
+  const el = document.querySelector<HTMLElement>(`[data-field="${key}"]`)
+  if (!el) return
+  el.scrollIntoView({behavior: 'smooth', block: 'center'})
+  el.querySelector<HTMLElement>('select, input, button, [tabindex]')?.focus({preventScroll: true})
+}
 
 const EMPTY: Draft = {
   createdFor: 'daughter',
   gender: 'female',
+  complexion: 'wheatish',
   diet: 'vegetarian',
   manglik: 'unknown',
   maritalStatus: 'never_married',
-};
+}
+
+/** Which of the three cards are fully filled — drives the progress bar and the ticks. */
+function sectionsDone(d: Draft): [boolean, boolean, boolean] {
+  const s1 = Boolean(d.dob && d.heightCm && d.weightBand && d.complexion)
+  const s2 = Boolean(
+    d.educationLevel &&
+    (d.educationLevel !== 'other' || d.education?.trim()) &&
+    d.occupationCategory &&
+    (d.occupationCategory === 'not_working' || d.incomeBand),
+  )
+  const s3 = Boolean(
+    d.religion &&
+    d.category &&
+    d.community?.trim() &&
+    d.state &&
+    d.district &&
+    d.city &&
+    d.cityLat !== undefined,
+  )
+  return [s1, s2, s3]
+}
 
 export default function OnboardingPage() {
-  const router = useRouter();
-  const { push } = useToast();
-  const { ready, isSignedIn, refresh } = useSession();
+  const router = useRouter()
+  const {push} = useToast()
+  const {ready, isSignedIn, refresh} = useSession()
 
-  const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<Draft>(EMPTY);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
-  const [submittedCode, setSubmittedCode] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft>(EMPTY)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  /** Keys of the fields the last submit found empty — drives the popup. */
+  const [missing, setMissing] = useState<string[] | null>(null)
+
+  const done = useMemo(() => sectionsDone(draft), [draft])
 
   useEffect(() => {
-    if (ready && !isSignedIn) router.replace('/login');
-  }, [ready, isSignedIn, router]);
+    if (ready && !isSignedIn) router.replace('/login')
+  }, [ready, isSignedIn, router])
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
-    setDraft((d) => ({ ...d, [key]: value }));
+    setDraft((d) => ({...d, [key]: value}))
     setErrors((e) => {
-      if (!e[key as string]) return e;
-      const next = { ...e };
-      delete next[key as string];
-      return next;
-    });
-  };
+      if (!e[key as string]) return e
+      const next = {...e}
+      delete next[key as string]
+      return next
+    })
+  }
 
-  function validate(current: number): boolean {
-    const e: Record<string, string> = {};
-    if (current === 0) {
-      if (!draft.dob) e.dob = 'Choose the date of birth as written on the certificate.';
+  function validate(): boolean {
+    const e: Record<string, string> = {}
+    {
+      if (!draft.dob) e.dob = 'Choose the date of birth as written on the certificate.'
       else {
-        const age = api.ageFromDob(draft.dob);
-        if (age < 18) e.dob = 'The person must be 18 or older to be listed here.';
-        if (age > 70) e.dob = 'Check the year — this date gives an age above 70.';
+        const age = api.ageFromDob(draft.dob)
+        const minAge = minAgeFor(draft.gender)
+        if (age < minAge)
+          e.dob = `A ${draft.gender === 'male' ? 'boy' : 'girl'} must be ${minAge} or older to be listed here.`
+        if (age > 70) e.dob = 'Check the year — this date gives an age above 70.'
       }
-      if (!draft.heightCm) e.heightCm = 'Choose a height from the list.';
-      if (!draft.weightBand) e.weightBand = 'Choose the weight from the list.';
+      if (!draft.heightCm) e.heightCm = 'Choose a height from the list.'
+      if (!draft.weightBand) e.weightBand = 'Choose the weight from the list.'
+      if (!draft.complexion) e.complexion = 'Choose the skin tone from the list.'
     }
-    if (current === 1) {
-      if (!draft.educationLevel) e.educationLevel = 'Choose the education from the list.';
-      if (!draft.occupationCategory) e.occupationCategory = 'Choose the job type from the list.';
-      if (!draft.incomeBand) e.incomeBand = 'Choose the monthly income band from the list.';
+    {
+      if (!draft.educationLevel) e.educationLevel = 'Choose the education from the list.'
+      else if (draft.educationLevel === 'other' && !draft.education?.trim())
+        e.education = 'Write the education.'
+      if (!draft.occupationCategory) e.occupationCategory = 'Choose the job type from the list.'
+      if (draft.occupationCategory !== 'not_working' && !draft.incomeBand)
+        e.incomeBand = 'Choose the monthly income band from the list.'
     }
-    if (current === 2) {
-      if (!draft.religion) e.religion = 'Choose the religion from the list.';
-      else if (!draft.jatiChoice) e.community = 'Choose the jati from the list.';
-      else if (draft.jatiChoice === 'other' && !draft.community?.trim()) {
-        e.community = 'Write the jati name.';
-      }
+    {
+      if (!draft.religion) e.religion = 'Choose the religion from the list.'
+      if (!draft.category) e.category = 'Choose the category from the list.'
+      else if (!draft.community?.trim())
+        e.community = 'Write the jati.'
       if (!draft.state || !draft.district || !draft.city || draft.cityLat === undefined) {
-        e.city = 'Choose the state, then the district, then the tehsil.';
+        e.city = 'Choose the state, then the district, then the tehsil.'
       }
     }
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  }
-
-  function next() {
-    if (!validate(step)) return;
-    setStep((s) => Math.min(s + 1, STEPS.length - 1));
-    window.scrollTo({ top: 0 });
-  }
-
-  function back() {
-    setStep((s) => Math.max(s - 1, 0));
-    window.scrollTo({ top: 0 });
+    setErrors(e)
+    // Keep form order, and show "Education" once even if both its keys failed.
+    const keys = Object.keys(FIELD_NAMES).filter((k) => e[k])
+    if (keys.length) {
+      setMissing(keys)
+      return false
+    }
+    return true
   }
 
   async function submit() {
-    if (!validate(2)) return;
-    setBusy(true);
+    if (!validate()) return
+    setBusy(true)
     try {
-      const profile = await api.createProfile({
+      await api.createProfile({
         createdFor: draft.createdFor,
         gender: draft.gender as Gender,
         dob: draft.dob!,
         heightCm: draft.heightCm!,
         weightBand: draft.weightBand!,
-        // No free-text degree is collected any more — the level IS the education.
-        education: EDUCATION_SHORT[draft.educationLevel as EducationLevel],
+        complexion: draft.complexion as Complexion,
+        // The level IS the education, except "Other", where the family writes it.
+        education:
+          draft.educationLevel === 'other'
+            ? draft.education!.trim()
+            : EDUCATION_SHORT[draft.educationLevel as EducationLevel],
         educationLevel: draft.educationLevel as EducationLevel,
         // No free-text work is collected any more — the job type IS the work.
         occupation: OCCUPATION_LABELS[draft.occupationCategory as OccupationCategory].en,
         occupationCategory: draft.occupationCategory as OccupationCategory,
-        incomeBand: draft.incomeBand as IncomeBand,
+        incomeBand:
+          draft.occupationCategory === 'not_working'
+            ? 'upto_15k'
+            : (draft.incomeBand as IncomeBand),
         religion: draft.religion as Religion,
+        category: draft.category as SocialCategory,
         community: draft.community!.trim(),
         state: draft.state!,
         district: draft.district!,
@@ -154,238 +218,259 @@ export default function OnboardingPage() {
         manglik: draft.manglik as Manglik,
         about: '',
         familyBrief: '',
-      });
-      await refresh();
-      setSubmittedCode(profile.publicCode);
+      })
+      await refresh()
+      setSubmitted(true)
     } catch (err) {
-      push('error', err instanceof ApiError ? err.message : 'Could not save. Try once more.');
+      push('error', err instanceof ApiError ? err.message : 'Could not save. Try once more.')
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
-  if (submittedCode) return <SubmittedScreen code={submittedCode} />;
+  if (submitted) return <SubmittedScreen />
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-5 pb-28">
-      <h1 className="text-xl font-bold leading-tight">
-        Fill the biodata
-        <span className="hindi block font-normal text-ink-3">बायोडाटा भरें</span>
-      </h1>
+    <main className="mx-auto max-w-xl px-4 pb-32 pt-6 sm:pt-8">
+      {/* --- Title block ------------------------------------------------------ */}
+      <header>
+        <h1 className="display text-[26px] leading-tight text-ink">Fill the biodata</h1>
+      </header>
 
-      <ProgressBar step={step} />
-
-      <Card className="mt-4 p-4 sm:p-5">
-        {step === 0 && (
-          <fieldset className="space-y-4">
-            <legend className="sr-only">Basic details</legend>
-
-            <div>
-              <p className="text-[15px] font-semibold">
-                Who are you creating this for?
-                <span className="hindi block font-normal text-ink-3">
-                  यह प्रोफ़ाइल किसके लिए बना रहे हैं?
-                </span>
-              </p>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {(
-                  [
-                    { key: 'daughter', en: 'My daughter', hi: 'बेटी', gender: 'female' },
-                    { key: 'son', en: 'My son', hi: 'बेटा', gender: 'male' },
-                    { key: 'self', en: 'Myself', hi: 'स्वयं', gender: null },
-                  ] as const
-                ).map((opt) => (
+      <div className="mt-5 space-y-5">
+        {/* --- 1. Personal ---------------------------------------------------- */}
+        <SectionCard n={1} en="Fill in your correct details" done={done[0]}>
+          <div>
+            <p className="flex flex-wrap items-baseline gap-x-2 text-[15px] font-semibold leading-tight text-ink">
+              Sex
+            </p>
+            <div
+              role="group"
+              aria-label="Sex"
+              className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-paper p-1 ring-1 ring-inset ring-rule-strong"
+            >
+              {(
+                [
+                  {gender: 'male', createdFor: 'son', en: 'Male'},
+                  {gender: 'female', createdFor: 'daughter', en: 'Female'},
+                ] as const
+              ).map((opt) => {
+                const active = draft.gender === opt.gender
+                return (
                   <button
-                    key={opt.key}
+                    key={opt.gender}
                     type="button"
                     onClick={() => {
-                      set('createdFor', opt.key);
-                      if (opt.gender) set('gender', opt.gender);
+                      set('gender', opt.gender)
+                      // Matching side follows from sex; nobody is asked "for whom".
+                      set('createdFor', opt.createdFor)
+                      // A year allowed for a girl (18+) may be too young for a boy (21+).
+                      if (draft.dob && api.ageFromDob(draft.dob) < minAgeFor(opt.gender))
+                        set('dob', undefined)
                     }}
-                    aria-pressed={draft.createdFor === opt.key}
+                    aria-pressed={active}
                     className={cx(
-                      'tap flex flex-col items-center justify-center rounded-lg border-2 px-2 py-3 text-[15px] font-semibold',
-                      draft.createdFor === opt.key
-                        ? 'border-stamp bg-stamp-wash text-stamp-ink'
-                        : 'border-rule-strong bg-card text-ink',
+                      'tap flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-[15px] font-semibold transition-all duration-150',
+                      active
+                        ? 'bg-card text-stamp shadow-[var(--shadow-e1)] ring-1 ring-inset ring-stamp-ring'
+                        : 'text-ink-2 hover:text-ink',
                     )}
                   >
+                    {active ? <Check size={16} strokeWidth={3} aria-hidden /> : null}
                     {opt.en}
-                    <span className="hindi font-normal text-ink-3">{opt.hi}</span>
                   </button>
-                ))}
-              </div>
+                )
+              })}
             </div>
+          </div>
 
-            <Select
-              label="Boy or girl"
-              hindi="लड़का या लड़की"
-              value={draft.gender ?? 'female'}
-              onChange={(e) => set('gender', e.target.value as Gender)}
-              hint="You will only be shown profiles of the opposite side."
-            >
-              <option value="female">Girl / लड़की</option>
-              <option value="male">Boy / लड़का</option>
-            </Select>
-
-            <TextField
-              label="Date of birth"
-              hindi="जन्म तिथि"
-              type="date"
+          <div data-field="dob">
+            <DobField
               value={draft.dob ?? ''}
-              onChange={(e) => set('dob', e.target.value)}
+              onChange={(iso) => set('dob', iso || undefined)}
               error={errors.dob}
-              hint={draft.dob ? `Age ${api.ageFromDob(draft.dob)} years` : 'As on the certificate'}
+              minAge={minAgeFor(draft.gender)}
+              hint={
+                draft.dob
+                  ? `Age ${api.ageFromDob(draft.dob)} years`
+                  : `As on the certificate — must be ${minAgeFor(draft.gender)} or older`
+              }
             />
+          </div>
 
+          <div data-field="heightCm">
             <Select
               label="Height"
-              hindi="कद"
               value={draft.heightCm ?? ''}
               onChange={(e) => set('heightCm', Number(e.target.value))}
               error={errors.heightCm}
             >
-              <option value="">Choose height / कद चुनें</option>
-              {Array.from({ length: 46 }, (_, i) => 142 + i).map((cm) => (
+              <option value="">Choose height</option>
+              {/* Feet and inches only — that is how every family says a height. */}
+              {HEIGHT_OPTIONS.map(({cm, label}) => (
                 <option key={cm} value={cm}>
-                  {formatHeight(cm)}
+                  {label}
                 </option>
               ))}
             </Select>
+          </div>
 
+          <div data-field="weightBand">
             <Select
               label="Weight"
-              hindi="वज़न"
               value={draft.weightBand ?? ''}
               onChange={(e) => set('weightBand', e.target.value)}
               error={errors.weightBand}
             >
-              <option value="">Choose weight / वज़न चुनें</option>
+              <option value="">Choose weight</option>
               {WEIGHT_BANDS.map((band) => (
                 <option key={band} value={band}>
                   {formatWeightBand(band)}
                 </option>
               ))}
             </Select>
-            <Select
-              label="Marital status"
-              hindi="वैवाहिक स्थिति"
-              value={draft.maritalStatus ?? 'never_married'}
-              onChange={(e) => set('maritalStatus', e.target.value as MaritalStatus)}
-            >
-              {Object.entries(MARITAL_LABELS).map(([key, l]) => (
-                <option key={key} value={key}>
-                  {l.en} / {l.hi}
-                </option>
-              ))}
-            </Select>
-          </fieldset>
-        )}
+          </div>
 
-        {step === 1 && (
-          <fieldset className="space-y-4">
-            <legend className="sr-only">Education and work</legend>
+          <div data-field="complexion">
+            <SkinTonePicker
+              value={draft.complexion as Complexion | undefined}
+              onChange={(tone) => set('complexion', tone)}
+              error={errors.complexion}
+            />
+          </div>
+
+          <Select
+            label="Marital status"
+            value={draft.maritalStatus ?? 'never_married'}
+            onChange={(e) => set('maritalStatus', e.target.value as MaritalStatus)}
+          >
+            {Object.entries(MARITAL_LABELS).map(([key, l]) => (
+              <option key={key} value={key}>
+                {l.en}
+              </option>
+            ))}
+          </Select>
+        </SectionCard>
+
+        {/* --- 2. Education & work ------------------------------------------- */}
+        <SectionCard n={2} en="Education & work" done={done[1]}>
+          <div data-field="educationLevel">
             <Select
               label="Education"
-              hindi="शिक्षा"
               value={draft.educationLevel ?? ''}
-              onChange={(e) => set('educationLevel', e.target.value as EducationLevel)}
+              onChange={(e) => {
+                set('educationLevel', e.target.value as EducationLevel)
+                if (e.target.value !== 'other') set('education', undefined)
+              }}
               error={errors.educationLevel}
             >
-              <option value="">Choose education / शिक्षा चुनें</option>
+              <option value="">Choose education</option>
               {Object.entries(EDUCATION_LEVEL_LABELS).map(([key, l]) => (
                 <option key={key} value={key}>
-                  {l.en} / {l.hi}
+                  {l.en}
                 </option>
               ))}
             </Select>
+          </div>
+          {draft.educationLevel === 'other' ? (
+            <div data-field="education">
+              <TextField
+                label="Write the education"
+                value={draft.education ?? ''}
+                onChange={(e) => set('education', e.target.value)}
+                maxLength={60}
+                placeholder="e.g. ITI Electrician, D.Pharma, B.Voc"
+                error={errors.education}
+              />
+            </div>
+          ) : null}
+          <div data-field="occupationCategory">
             <Select
               label="Job type"
-              hindi="नौकरी का प्रकार"
               value={draft.occupationCategory ?? ''}
-              onChange={(e) => set('occupationCategory', e.target.value as OccupationCategory)}
+              onChange={(e) => {
+                const next = e.target.value as OccupationCategory
+                set('occupationCategory', next)
+                if (next === 'not_working') set('incomeBand', undefined)
+              }}
               error={errors.occupationCategory}
             >
-              <option value="">Choose job type / प्रकार चुनें</option>
+              <option value="">Choose job type</option>
               {Object.entries(OCCUPATION_LABELS).map(([key, l]) => (
                 <option key={key} value={key}>
-                  {l.en} / {l.hi}
+                  {l.en}
                 </option>
               ))}
             </Select>
-            <Select
-              label="Monthly income"
-              hindi="मासिक आय"
-              value={draft.incomeBand ?? ''}
-              onChange={(e) => set('incomeBand', e.target.value as IncomeBand)}
-              error={errors.incomeBand}
-              hint="Only the band is shown, never the exact amount."
-            >
-              {/* Hindi only — the English label is the same numbers again, and
-                  the doubled text made every option read like a sentence. */}
-              <option value="">आय चुनें</option>
-              {Object.entries(INCOME_LABELS).map(([key, l]) => (
-                <option key={key} value={key}>
-                  {l.hi}
-                </option>
-              ))}
-            </Select>
-          </fieldset>
-        )}
+          </div>
+          {draft.occupationCategory !== 'not_working' ? (
+            <div data-field="incomeBand">
+              <Select
+                label="Monthly income"
+                value={draft.incomeBand ?? ''}
+                onChange={(e) => set('incomeBand', e.target.value as IncomeBand)}
+                error={errors.incomeBand}
+                hint="Only the band is shown, never the exact amount."
+              >
+                <option value="">Choose income</option>
+                {Object.entries(INCOME_LABELS).map(([key, l]) => (
+                  <option key={key} value={key}>
+                    {l.en}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          ) : null}
+        </SectionCard>
 
-        {step === 2 && (
-          <fieldset className="space-y-4">
-            <legend className="sr-only">Community and city</legend>
+        {/* --- 3. Community & city ------------------------------------------- */}
+        <SectionCard n={3} en="Community & city" done={done[2]}>
+          <div data-field="religion">
             <Select
               label="Religion"
-              hindi="धर्म"
               value={draft.religion ?? ''}
               onChange={(e) => {
-                set('religion', (e.target.value || undefined) as Religion | undefined);
-                set('jatiChoice', undefined);
-                set('community', undefined);
+                set('religion', (e.target.value || undefined) as Religion | undefined)
               }}
               error={errors.religion}
             >
-              <option value="">Choose religion / धर्म चुनें</option>
+              <option value="">Choose religion</option>
               {Object.entries(RELIGION_LABELS).map(([key, l]) => (
                 <option key={key} value={key}>
-                  {l.en} / {l.hi}
+                  {l.en}
                 </option>
               ))}
             </Select>
-            {draft.religion ? (
-              <Select
-                label="Jati"
-                hindi="जाति"
-                value={draft.jatiChoice ?? ''}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  set('jatiChoice', v || undefined);
-                  // A listed jati is final; "Other" waits for the text box.
-                  set('community', v && v !== 'other' ? v : undefined);
-                }}
-                error={draft.jatiChoice !== 'other' ? errors.community : undefined}
-              >
-                <option value="">Choose jati / जाति चुनें</option>
-                {JATI_OPTIONS[draft.religion as Religion].map((j) => (
-                  <option key={j} value={j}>
-                    {j}
-                  </option>
-                ))}
-                <option value="other">Other / अन्य</option>
-              </Select>
-            ) : null}
-            {draft.jatiChoice === 'other' ? (
-              <TextField
-                label="Write the jati"
-                hindi="जाति लिखें"
-                value={draft.community ?? ''}
-                onChange={(e) => set('community', e.target.value)}
-                maxLength={40}
-                error={errors.community}
-              />
-            ) : null}
+          </div>
+          <div data-field="category">
+            <Select
+              label="Category"
+              value={draft.category ?? ''}
+              onChange={(e) =>
+                set('category', (e.target.value || undefined) as SocialCategory | undefined)
+              }
+              error={errors.category}
+            >
+              <option value="">Choose category</option>
+              {Object.entries(CATEGORY_LABELS).map(([key, l]) => (
+                <option key={key} value={key}>
+                  {l.en}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div data-field="community">
+            <TextField
+              label="Jati"
+              value={draft.community ?? ''}
+              onChange={(e) => set('community', e.target.value || undefined)}
+              maxLength={40}
+              autoComplete="off"
+              placeholder="e.g. Rajput, Brahmin, Jat"
+              error={errors.community}
+            />
+          </div>
+          <div data-field="city">
             <StateDistrictTehsilField
               value={
                 draft.city && draft.state && draft.district && draft.cityLat !== undefined
@@ -399,126 +484,152 @@ export default function OnboardingPage() {
                   : null
               }
               onChange={(place) => {
-                set('state', place?.state);
-                set('district', place?.district);
-                set('city', place?.tehsil);
-                set('cityLat', place?.lat);
-                set('cityLng', place?.lng);
+                set('state', place?.state)
+                set('district', place?.district)
+                set('city', place?.tehsil)
+                set('cityLat', place?.lat)
+                set('cityLng', place?.lng)
               }}
               error={errors.city}
             />
-            <TextField
-              label="Village or mohalla (optional)"
-              hindi="गाँव या मोहल्ला (वैकल्पिक)"
-              value={draft.village ?? ''}
-              onChange={(e) => set('village', e.target.value)}
-              maxLength={60}
-              placeholder="e.g. Dilari"
-              hint="Write it if you live in a village or mohalla. You can leave this empty. / गाँव या मोहल्ले में रहते हों तो नाम लिखें, वरना खाली छोड़ दें।"
-            />
-            <Select
-              label="Manglik"
-              hindi="मांगलिक"
-              value={draft.manglik ?? 'unknown'}
-              onChange={(e) => set('manglik', e.target.value as Manglik)}
-            >
-              {Object.entries(MANGLIK_LABELS).map(([key, l]) => (
-                <option key={key} value={key}>
-                  {l.en} / {l.hi}
-                </option>
-              ))}
-            </Select>
-          </fieldset>
-        )}
+          </div>
+          <Select
+            label="Manglik"
+            value={draft.manglik ?? 'unknown'}
+            onChange={(e) => set('manglik', e.target.value as Manglik)}
+          >
+            {Object.entries(MANGLIK_LABELS).map(([key, l]) => (
+              <option key={key} value={key}>
+                {l.en}
+              </option>
+            ))}
+          </Select>
+        </SectionCard>
+      </div>
 
-      </Card>
+      {/* --- "You missed this" popup ---------------------------------------- */}
+      <Sheet
+        open={missing !== null}
+        onClose={() => setMissing(null)}
+        title="Some details are missing"
+        footer={
+          <Button
+            variant="primary"
+            fullWidth
+            onClick={() => {
+              const first = missing?.[0]
+              setMissing(null)
+              if (first) requestAnimationFrame(() => goToField(first))
+            }}
+          >
+            Fill the missing details
+          </Button>
+        }
+      >
+        <p className="text-[15px] text-ink-2">
+          You have not filled these yet. Tap one to go to it. The biodata is listed only when every
+          line below is filled.
+        </p>
+        <ul className="mt-3 space-y-2">
+          {[...new Set((missing ?? []).map((k) => FIELD_NAMES[k]))].map((name) => {
+            const key = (missing ?? []).find((k) => FIELD_NAMES[k] === name)!
+            return (
+              <li key={name}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMissing(null)
+                    requestAnimationFrame(() => goToField(key))
+                  }}
+                  className="tap flex w-full items-center gap-3 rounded-xl bg-oxide-wash px-4 py-3 text-left ring-1 ring-inset ring-oxide/25"
+                >
+                  <CircleAlert size={20} className="shrink-0 text-oxide" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[16px] font-semibold text-ink">{name}</span>
+                    <span className="block text-sm text-ink-2">{errors[key]}</span>
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </Sheet>
 
-      <div className="fixed inset-x-0 bottom-0 border-t-2 border-rule-strong bg-card px-4 py-3">
-        <div className="mx-auto flex max-w-xl gap-3">
-          {step > 0 && (
-            <Button onClick={back} icon={<ArrowLeft size={20} aria-hidden />} className="shrink-0">
-              Back
-            </Button>
-          )}
-          {step < STEPS.length - 1 ? (
-            <Button
-              variant="primary"
-              fullWidth
-              onClick={next}
-              icon={<ArrowRight size={20} aria-hidden />}
-              label={{ en: 'Save and continue', hi: 'सहेजें और आगे बढ़ें' }}
-            />
-          ) : (
-            <Button
-              variant="primary"
-              fullWidth
-              loading={busy}
-              onClick={submit}
-              icon={<Check size={20} aria-hidden />}
-              label={{ en: 'Send for review', hi: 'जाँच के लिए भेजें' }}
-            />
-          )}
+      {/* --- Sticky action bar ------------------------------------------------ */}
+      <div
+        className="glass fixed inset-x-0 bottom-0 z-40 border-t border-rule px-4 pt-3"
+        style={{paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))'}}
+      >
+        <div className="mx-auto max-w-xl">
+          <Button
+            variant="primary"
+            fullWidth
+            loading={busy}
+            onClick={submit}
+            className="py-3"
+            icon={<Check size={20} aria-hidden />}
+          >
+            List the biodata
+          </Button>
         </div>
       </div>
     </main>
-  );
+  )
 }
 
-function ProgressBar({ step }: { step: number }) {
-  const pct = ((step + 1) / STEPS.length) * 100;
+/**
+ * One numbered card. The header strip is the "you are here" landmark; the tick
+ * appears the moment every field inside is filled, so a parent can see what is
+ * left without scrolling back up.
+ */
+function SectionCard({
+  n,
+  en,
+  done,
+  children,
+}: {
+  n: number
+  en: string
+  done: boolean
+  children: React.ReactNode
+}) {
   return (
-    <div className="mt-3">
-      <div className="flex items-baseline justify-between text-sm">
-        <span className="font-semibold">
-          Step {step + 1} of {STEPS.length} — {STEPS[step].en}
-          <span className="hindi block font-normal text-ink-3">{STEPS[step].hi}</span>
+    <Card as="section" className="overflow-hidden">
+      <header className="flex items-center gap-3 border-b border-rule bg-paper px-4 py-3.5 sm:px-5">
+        <span
+          aria-hidden
+          className={cx(
+            'grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[15px] font-bold transition-colors',
+            done ? 'bg-seal text-white' : 'brand-gradient text-white shadow-[var(--shadow-brand)]',
+          )}
+        >
+          {done ? <Check size={17} strokeWidth={3} /> : n}
         </span>
-        <span className="code text-ink-3">{Math.round(pct)}%</span>
-      </div>
-      <div
-        className="mt-2 h-2.5 w-full border border-rule-strong bg-card"
-        role="progressbar"
-        aria-valuenow={step + 1}
-        aria-valuemin={1}
-        aria-valuemax={STEPS.length}
-        aria-label="Biodata progress"
-      >
-        <div className="h-full bg-stamp transition-[width] duration-300" style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
+        <h2 id={`section-${n}`} className="min-w-0 flex-1 leading-tight">
+          <span className="block text-[17px] font-bold text-ink">{en}</span>
+        </h2>
+      </header>
+      <fieldset className="space-y-6 p-4 sm:p-5">
+        <legend className="sr-only">{en}</legend>
+        {children}
+      </fieldset>
+    </Card>
+  )
 }
 
-function SubmittedScreen({ code }: { code: string }) {
-  const router = useRouter();
+function SubmittedScreen() {
+  const router = useRouter()
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 py-8">
-      <Card className="p-6 text-center">
-        <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-seal-wash text-seal">
-          <ClipboardCheck size={30} aria-hidden />
+      <Card className="p-8 text-center">
+        <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-seal-wash text-seal">
+          <Check size={40} strokeWidth={3} aria-hidden />
         </div>
-        <h1 className="mt-4 text-xl font-bold leading-tight">
-          Under review — usually within 24 hours
-          <span className="hindi block font-normal text-ink-3">
-            जाँच जारी है — आमतौर पर 24 घंटे में
-          </span>
-        </h1>
-        <p className="mt-3 text-[15px] text-ink-2">
-          Our office checks every biodata before it goes into the register. Your profile code is
-        </p>
-        <p className="code mt-2 text-2xl font-bold">{code}</p>
-        <p className="mt-3 text-[15px] text-ink-2">
-          You can start looking at profiles right away. Families will be able to find yours once the
-          check is done.
-        </p>
-        <Button
-          variant="primary"
-          fullWidth
-          className="mt-5"
-          onClick={() => router.push('/browse')}
-          label={{ en: 'Start looking at profiles', hi: 'प्रोफ़ाइल देखना शुरू करें' }}
-        />
+        <h1 className="mt-5 text-2xl font-bold leading-tight">Your biodata is added</h1>
+        <Button variant="primary" fullWidth className="mt-6" onClick={() => router.push('/browse')}>
+          Start looking at profiles
+        </Button>
       </Card>
     </main>
-  );
+  )
 }

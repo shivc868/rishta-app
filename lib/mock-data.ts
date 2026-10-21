@@ -12,6 +12,7 @@
 import type {
   Account,
   Religion,
+  Complexion,
   Diet,
   EducationLevel,
   Gender,
@@ -25,6 +26,7 @@ import type {
 
   Request,
   Shortlist,
+  SocialCategory,
 } from '@/types';
 
 
@@ -52,7 +54,6 @@ const int = (min: number, max: number) => min + Math.floor(rand() * (max - min +
 export const DEMO_EPOCH = new Date('2026-08-18T09:00:00.000Z').getTime();
 const DAY = 86_400_000;
 const daysAgo = (d: number) => new Date(DEMO_EPOCH - d * DAY).toISOString();
-const daysFromNow = (d: number) => new Date(DEMO_EPOCH + d * DAY).toISOString();
 
 // --- name & attribute pools -------------------------------------------------
 
@@ -74,12 +75,15 @@ const SURNAMES = [
 ];
 
 /** religion -> jatis, weighted for each belt. HP is Hindu-heavy hills; Punjab is Sikh-majority. */
+/** Roughly the HP/Punjab mix: general-heavy, with OBC/SC/ST present. */
+const CATEGORIES: SocialCategory[] = ['general', 'general', 'general', 'obc', 'sc', 'sc', 'st'];
+
 const HP_RELIGION_JATIS: Array<{ religion: Religion; jatis: string[] }> = [
-  { religion: 'hindu', jatis: ['Brahmin', 'Rajput / Thakur', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
-  { religion: 'hindu', jatis: ['Brahmin', 'Rajput / Thakur', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
-  { religion: 'hindu', jatis: ['Brahmin', 'Rajput / Thakur', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
-  { religion: 'hindu', jatis: ['Brahmin', 'Rajput / Thakur', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
-  { religion: 'hindu', jatis: ['Brahmin', 'Rajput / Thakur', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
+  { religion: 'hindu', jatis: ['Brahmin', 'Rajput', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
+  { religion: 'hindu', jatis: ['Brahmin', 'Rajput', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
+  { religion: 'hindu', jatis: ['Brahmin', 'Rajput', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
+  { religion: 'hindu', jatis: ['Brahmin', 'Rajput', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
+  { religion: 'hindu', jatis: ['Brahmin', 'Rajput', 'Choudhary', 'Sood', 'Mahajan', 'Gaddi', 'Dhiman', 'Koli'] },
   { religion: 'sikh', jatis: ['Jat Sikh', 'Saini Sikh', 'Ramgarhia'] },
   { religion: 'buddhist', jatis: ['Bodh'] },
   { religion: 'muslim', jatis: ['Sheikh', 'Gujjar (Muslim)'] },
@@ -95,10 +99,13 @@ const PB_RELIGION_JATIS: Array<{ religion: Religion; jatis: string[] }> = [
 ];
 
 /**
- * Seed geography: 75 profiles from Himachal Pradesh, 25 from Punjab.
+ * Seed geography: 75 profiles from the Kangra–Una–Hamirpur belt of Himachal
+ * Pradesh, 25 from Hoshiarpur district in Punjab — the register's home turf.
  * District and tehsil names are copied verbatim from /india-admin.json so the
  * cascading location filter matches seeded rows exactly; coordinates are the
- * tehsil towns' real ones, so the radius filter stays honest.
+ * tehsil towns' real ones, so the radius filter stays honest. Villages belong
+ * to their own tehsil, so a card never pairs a Nurpur village with Nadaun.
+ * '' = lives in the tehsil town itself.
  */
 interface SeedPlace {
   state: string;
@@ -106,55 +113,50 @@ interface SeedPlace {
   city: string;
   lat: number;
   lng: number;
+  villages: string[];
 }
 
+const TOWN = ['', '', ''];
+
 const HP_PLACES: SeedPlace[] = [
-  { state: 'Himachal Pradesh', district: 'Kangra', city: 'Dharmsala', lat: 32.219, lng: 76.323 },
-  { state: 'Himachal Pradesh', district: 'Kangra', city: 'Baijnath', lat: 32.053, lng: 76.65 },
-  { state: 'Himachal Pradesh', district: 'Kangra', city: 'Dera Gopipur', lat: 31.879, lng: 76.219 },
-  { state: 'Himachal Pradesh', district: 'Mandi', city: 'Mandi', lat: 31.712, lng: 76.933 },
-  { state: 'Himachal Pradesh', district: 'Mandi', city: 'Sundarnagar', lat: 31.535, lng: 76.905 },
-  { state: 'Himachal Pradesh', district: 'Mandi', city: 'Jogindarnagar', lat: 31.99, lng: 76.79 },
-  { state: 'Himachal Pradesh', district: 'Shimla', city: 'Shimla ( Rural )', lat: 31.104, lng: 77.166 },
-  { state: 'Himachal Pradesh', district: 'Shimla', city: 'Theog', lat: 31.121, lng: 77.348 },
-  { state: 'Himachal Pradesh', district: 'Solan', city: 'Solan', lat: 30.905, lng: 77.097 },
-  { state: 'Himachal Pradesh', district: 'Solan', city: 'Nalagarh', lat: 31.042, lng: 76.723 },
-  { state: 'Himachal Pradesh', district: 'Una', city: 'Una', lat: 31.465, lng: 76.269 },
-  { state: 'Himachal Pradesh', district: 'Una', city: 'Amb', lat: 31.68, lng: 76.12 },
-  { state: 'Himachal Pradesh', district: 'Hamirpur', city: 'Hamirpur', lat: 31.686, lng: 76.522 },
-  { state: 'Himachal Pradesh', district: 'Hamirpur', city: 'Nadaun', lat: 31.783, lng: 76.343 },
-  { state: 'Himachal Pradesh', district: 'Bilaspur', city: 'Ghumarwin', lat: 31.442, lng: 76.715 },
-  { state: 'Himachal Pradesh', district: 'Bilaspur', city: 'Bilaspur Sadar', lat: 31.33, lng: 76.757 },
-  { state: 'Himachal Pradesh', district: 'Chamba', city: 'Chamba', lat: 32.571, lng: 76.102 },
-  { state: 'Himachal Pradesh', district: 'Chamba', city: 'Dalhousie', lat: 32.552, lng: 75.947 },
-  { state: 'Himachal Pradesh', district: 'Kullu', city: 'Kullu', lat: 31.958, lng: 77.109 },
-  { state: 'Himachal Pradesh', district: 'Sirmaur', city: 'Nahan', lat: 30.559, lng: 77.295 },
+  // Kangra — lower belt along the Punjab border
+  { state: 'Himachal Pradesh', district: 'Kangra', city: 'Fatehpur', lat: 32.071, lng: 75.902,
+    villages: [...TOWN, 'Rey', 'Raja Ka Talab', 'Sthana', 'Golwan', 'Bhatoli'] },
+  { state: 'Himachal Pradesh', district: 'Kangra', city: 'Nurpur', lat: 32.297, lng: 75.891,
+    villages: [...TOWN, 'Sadwan', 'Jassur', 'Ganoh', 'Ladori', 'Bhadwar', 'Kandwal'] },
+  { state: 'Himachal Pradesh', district: 'Kangra', city: 'Indora', lat: 32.128, lng: 75.652,
+    villages: [...TOWN, 'Damtal', 'Kandrori', 'Mand Miani', 'Dhameta', 'Riali'] },
+  { state: 'Himachal Pradesh', district: 'Kangra', city: 'Jawali', lat: 32.147, lng: 76.002,
+    villages: [...TOWN, 'Kotla', 'Nagrota Surian', 'Harsar', 'Sihunta', 'Bhali'] },
+  // Una
+  { state: 'Himachal Pradesh', district: 'Una', city: 'Una', lat: 31.465, lng: 76.269,
+    villages: [...TOWN, 'Santoshgarh', 'Mehatpur', 'Basdehra', 'Rampur', 'Jhalera'] },
+  { state: 'Himachal Pradesh', district: 'Una', city: 'Amb', lat: 31.68, lng: 76.12,
+    villages: ['Daulatpur Chowk', 'Daulatpur Chowk', 'Daulatpur Chowk', 'Gagret', 'Ambota', 'Chintpurni'] },
+  // Hamirpur
+  { state: 'Himachal Pradesh', district: 'Hamirpur', city: 'Hamirpur', lat: 31.686, lng: 76.522,
+    villages: [...TOWN, 'Tauni Devi', 'Dhaneta', 'Bhota', 'Anu', 'Kangoo'] },
+  { state: 'Himachal Pradesh', district: 'Hamirpur', city: 'Nadaun', lat: 31.783, lng: 76.343,
+    villages: [...TOWN, 'Jalari', 'Galore', 'Bela', 'Rangas', 'Kohla'] },
+  { state: 'Himachal Pradesh', district: 'Hamirpur', city: 'Barsar', lat: 31.548, lng: 76.352,
+    villages: [...TOWN, 'Bijhri', 'Dhaned', 'Chakmoh', 'Bani', 'Samtana'] },
+  { state: 'Himachal Pradesh', district: 'Hamirpur', city: 'Bhoranj', lat: 31.623, lng: 76.62,
+    villages: [...TOWN, 'Jahu', 'Bhareri', 'Ladraur', 'Tarkwari', 'Kanjyan'] },
+  { state: 'Himachal Pradesh', district: 'Hamirpur', city: 'Tira Sujanpur', lat: 31.835, lng: 76.503,
+    villages: [...TOWN, 'Sujanpur Tira', 'Khairi', 'Jangal Beri', 'Chabutra', 'Patlander'] },
 ];
 
 const PB_PLACES: SeedPlace[] = [
-  { state: 'Punjab', district: 'Amritsar', city: 'Ajnala', lat: 31.845, lng: 74.763 },
-  { state: 'Punjab', district: 'Ludhiana', city: 'Jagraon', lat: 30.788, lng: 75.474 },
-  { state: 'Punjab', district: 'Ludhiana', city: 'Khanna', lat: 30.705, lng: 76.222 },
-  { state: 'Punjab', district: 'Jalandhar', city: 'Nakodar', lat: 31.126, lng: 75.474 },
-  { state: 'Punjab', district: 'Jalandhar', city: 'Phillaur', lat: 31.019, lng: 75.792 },
-  { state: 'Punjab', district: 'Patiala', city: 'Patiala', lat: 30.336, lng: 76.392 },
-  { state: 'Punjab', district: 'Patiala', city: 'Rajpura', lat: 30.484, lng: 76.594 },
-  { state: 'Punjab', district: 'Hoshiarpur', city: 'Hoshiarpur', lat: 31.537, lng: 75.913 },
-  { state: 'Punjab', district: 'Gurdaspur', city: 'Gurdaspur', lat: 31.92, lng: 75.27 },
-  { state: 'Punjab', district: 'Bathinda', city: 'Bathinda', lat: 30.21, lng: 74.945 },
-  { state: 'Punjab', district: 'Pathankot', city: 'Pathankot', lat: 32.275, lng: 75.653 },
-];
-
-/** Real villages of each belt; '' = lives in town. */
-const HP_VILLAGES = [
-  '', '', '', '', '', '',
-  'Jia', 'Bhawarna', 'Chauntra', 'Panchrukhi', 'Thural', 'Lambagaon',
-  'Baldwara', 'Tauni Devi', 'Kotla',
-];
-const PB_VILLAGES = [
-  '', '', '', '', '', '',
-  'Sansarpur', 'Bhaini Sahib', 'Rurka Kalan', 'Dosanjh Kalan', 'Sidhwan Bet',
-  'Talwandi Rai',
+  { state: 'Punjab', district: 'Hoshiarpur', city: 'Hoshiarpur', lat: 31.537, lng: 75.913,
+    villages: [...TOWN, 'Bassi Kalan', 'Hariana', 'Sham Chaurasi', 'Chabbewal', 'Bhunga', 'Piplanwala'] },
+  { state: 'Punjab', district: 'Hoshiarpur', city: 'Hoshiarpur', lat: 31.537, lng: 75.913,
+    villages: [...TOWN, 'Bassi Kalan', 'Hariana', 'Sham Chaurasi', 'Chabbewal', 'Bhunga', 'Piplanwala'] },
+  { state: 'Punjab', district: 'Hoshiarpur', city: 'Dasua', lat: 31.817, lng: 75.653,
+    villages: [...TOWN, 'Tanda', 'Gardhiwala', 'Miani', 'Budhabar'] },
+  { state: 'Punjab', district: 'Hoshiarpur', city: 'Mukerian', lat: 31.954, lng: 75.617,
+    villages: [...TOWN, 'Talwara', 'Hajipur', 'Bhangala', 'Naushehra'] },
+  { state: 'Punjab', district: 'Hoshiarpur', city: 'Garhshankar', lat: 31.215, lng: 76.141,
+    villages: [...TOWN, 'Mahilpur', 'Saila Khurd', 'Posi', 'Binewal'] },
 ];
 
 const EDUCATION: Array<{ label: string; level: EducationLevel }> = [
@@ -222,6 +224,21 @@ const INCOME_BANDS: IncomeBand[] = [
 
 const DIETS: Diet[] = ['vegetarian', 'vegetarian', 'vegetarian', 'eggetarian', 'jain_vegetarian', 'non_vegetarian'];
 const MANGLIK: Manglik[] = ['no', 'no', 'no', 'yes', 'partial', 'unknown'];
+// Weighted the way the region actually skews: wheatish shades dominate.
+const COMPLEXIONS: Complexion[] = [
+  'very_fair',
+  'fair',
+  'fair',
+  'medium',
+  'wheatish',
+  'wheatish',
+  'wheatish',
+  'wheatish_brown',
+  'wheatish_brown',
+  'dusky',
+  'dusky',
+  'dark',
+];
 const MARITAL: MaritalStatus[] = [
   'never_married', 'never_married', 'never_married', 'never_married',
   'never_married', 'never_married', 'divorced', 'widowed',
@@ -309,6 +326,7 @@ function buildProfile(
   const rj = pick(fromHP ? HP_RELIGION_JATIS : PB_RELIGION_JATIS);
   const religion = rj.religion;
   const community = pick(rj.jatis);
+  const category = pick(CATEGORIES);
   const city = pick(fromHP ? HP_PLACES : PB_PLACES);
   const edu = pick(EDUCATION);
   const occ = pick(OCCUPATIONS);
@@ -322,6 +340,7 @@ function buildProfile(
     dob: dobForAge(age),
     heightCm: heightFor(gender),
     weightBand: weightBandFor(gender),
+    complexion: pick(COMPLEXIONS),
     education: edu.label,
     educationLevel: edu.level,
     occupation: occ.label,
@@ -332,11 +351,12 @@ function buildProfile(
         ? 'upto_15k'
         : pick(INCOME_BANDS),
     religion,
+    category,
     community,
     state: city.state,
     district: city.district,
     city: city.city,
-    village: pick(fromHP ? HP_VILLAGES : PB_VILLAGES),
+    village: pick(city.villages),
     cityLat: city.lat,
     cityLng: city.lng,
     maritalStatus: pick(MARITAL),
@@ -346,6 +366,7 @@ function buildProfile(
     familyBrief: pick(FAMILY_BRIEF),
     status: 'active',
     isVerified: true,
+    isSeed: true,
     createdAt: daysAgo(createdDaysAgo),
     lastActiveAt: daysAgo(int(0, Math.min(createdDaysAgo, 21))),
   };
@@ -377,13 +398,9 @@ function seed(): Seeded {
   }
 
   // Admin-testable states. Chosen by index, not at random, so they stay put.
-  // p003, p016, p029 are awaiting review; five others are live but unverified.
-  for (const id of ['p003', 'p016', 'p029']) {
-    const p = profiles.find((x) => x.id === id)!;
-    p.status = 'pending_review';
-    p.isVerified = false;
-  }
-  for (const id of ['p007', 'p012', 'p021', 'p034', 'p038']) {
+  // Profiles go live on submission (no review gate), so none start hidden;
+  // eight are live without the optional verified badge.
+  for (const id of ['p003', 'p016', 'p029', 'p007', 'p012', 'p021', 'p034', 'p038']) {
     profiles.find((x) => x.id === id)!.isVerified = false;
   }
   // One paused and one matched profile, so those states render somewhere.
@@ -391,12 +408,35 @@ function seed(): Seeded {
   profiles.find((x) => x.id === 'p030')!.status = 'matched';
 
   // The demo account: a parent with a son (p001) and a daughter (p002).
+  // One household, so the two share religion, jati, category and place —
+  // and sit in the register's majority community so the demo Matches tab
+  // has something to show.
+  {
+    const son = profiles.find((x) => x.id === 'p001')!;
+    const daughter = profiles.find((x) => x.id === 'p002')!;
+    son.religion = 'hindu';
+    son.community = 'Rajput';
+    son.category = 'general';
+    Object.assign(daughter, {
+      religion: son.religion,
+      community: son.community,
+      category: son.category,
+      state: son.state,
+      district: son.district,
+      city: son.city,
+      village: son.village,
+      cityLat: son.cityLat,
+      cityLng: son.cityLng,
+      familyBrief: son.familyBrief,
+    });
+  }
   const accounts: Account[] = [
     {
       id: 'acc-demo',
       phone: '+919876543210',
       createdAt: daysAgo(130),
       ownedProfileIds: ['p001', 'p002'],
+      isSeed: true,
     },
   ];
 
@@ -423,28 +463,16 @@ function seed(): Seeded {
     respondedAt: respondedD === null ? null : daysAgo(respondedD),
   });
 
-  // --- Two fully connected pairs, at different unlock stages ---------------
+  // --- Two pairs that have exchanged numbers, at different points --------
   //
-  // Pair A: son p001 <-> p004. Connected, photo shared to p001, and BOTH sides
-  // have approved contact — so numbers are visible. This is the finished flow.
+  // Pair A: son p001 <-> p004. Both asked, both said yes — numbers open both ways.
   requests.push(
-    req(1, 'p001', 'p004', 'interest', 'accepted', 'We liked the profile. Please consider.', 24, 22),
-    req(2, 'p001', 'p004', 'photo', 'accepted', '', 20, 19),
-    req(3, 'p001', 'p004', 'contact', 'accepted', '', 15, 14),
-    req(4, 'p004', 'p001', 'contact', 'accepted', '', 13, 12),
+    req(1, 'p001', 'p004', 'contact', 'accepted', '', 15, 14),
+    req(2, 'p004', 'p001', 'contact', 'accepted', '', 13, 12),
   );
   grants.push(
     {
       id: 'g001',
-      granteeProfileId: 'p001',
-      targetProfileId: 'p004',
-      scope: 'photo',
-      grantedAt: daysAgo(3),
-      expiresAt: daysFromNow(4),
-      revokedAt: null,
-    },
-    {
-      id: 'g002',
       granteeProfileId: 'p001',
       targetProfileId: 'p004',
       scope: 'contact',
@@ -453,7 +481,7 @@ function seed(): Seeded {
       revokedAt: null,
     },
     {
-      id: 'g003',
+      id: 'g002',
       granteeProfileId: 'p004',
       targetProfileId: 'p001',
       scope: 'contact',
@@ -463,56 +491,33 @@ function seed(): Seeded {
     },
   );
 
-  // Pair B: daughter p002 <-> p009. Connected and photos exchanged both ways,
-  // but only p009 has approved contact — p002 must see the "waiting" state.
+  // Pair B: daughter p002 <-> p009. p009 asked and p002 said yes, so p009 has
+  // her number; p002's own ask is still waiting on p009.
   requests.push(
-    req(5, 'p009', 'p002', 'interest', 'accepted', 'Beti ke liye rishta dekh rahe hain.', 18, 17),
-    req(6, 'p009', 'p002', 'photo', 'accepted', '', 16, 15),
-    req(7, 'p002', 'p009', 'photo', 'accepted', '', 14, 13),
-    req(8, 'p009', 'p002', 'contact', 'accepted', '', 5, 4),
-    req(9, 'p002', 'p009', 'contact', 'pending', '', 2, null),
+    req(3, 'p009', 'p002', 'contact', 'accepted', '', 5, 4),
+    req(4, 'p002', 'p009', 'contact', 'pending', '', 2, null),
   );
-  grants.push(
-    {
-      id: 'g004',
-      granteeProfileId: 'p009',
-      targetProfileId: 'p002',
-      scope: 'photo',
-      grantedAt: daysAgo(15),
-      expiresAt: daysFromNow(2),
-      revokedAt: null,
-    },
-    {
-      id: 'g005',
-      granteeProfileId: 'p002',
-      targetProfileId: 'p009',
-      scope: 'photo',
-      grantedAt: daysAgo(13),
-      expiresAt: daysFromNow(1),
-      revokedAt: null,
-    },
-    {
-      id: 'g006',
-      granteeProfileId: 'p009',
-      targetProfileId: 'p002',
-      scope: 'contact',
-      grantedAt: daysAgo(4),
-      expiresAt: null,
-      revokedAt: null,
-    },
-  );
+  grants.push({
+    id: 'g003',
+    granteeProfileId: 'p009',
+    targetProfileId: 'p002',
+    scope: 'contact',
+    grantedAt: daysAgo(4),
+    expiresAt: null,
+    revokedAt: null,
+  });
 
   // --- Five live requests, so both inbox tabs have content on first load ---
   requests.push(
     // Received by the son (p001) — needs a decision.
-    req(10, 'p006', 'p001', 'interest', 'pending', 'Ladke ka profile pasand aaya. Baat karna chahenge.', 3, null),
-    req(11, 'p014', 'p001', 'interest', 'pending', '', 1, null),
+    req(10, 'p006', 'p001', 'contact', 'pending', '', 3, null),
+    req(11, 'p014', 'p001', 'contact', 'pending', '', 1, null),
     // Received by the daughter (p002).
-    req(12, 'p011', 'p002', 'interest', 'pending', 'Family background milta-julta hai. Kripya vichaar karein.', 4, null),
+    req(12, 'p011', 'p002', 'contact', 'pending', '', 4, null),
     // Sent by the son, still waiting — withdrawable.
-    req(13, 'p001', 'p008', 'interest', 'pending', 'Ham aapki profile dekhe hain. Aage baat karein?', 6, null),
+    req(13, 'p001', 'p008', 'contact', 'pending', '', 6, null),
     // Sent by the daughter and declined 5 days ago — 25 days of cooldown left.
-    req(14, 'p002', 'p013', 'interest', 'declined', '', 8, 5),
+    req(14, 'p002', 'p013', 'contact', 'declined', '', 8, 5),
   );
 
   const shortlists: Shortlist[] = [

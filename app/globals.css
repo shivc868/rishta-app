@@ -1,78 +1,149 @@
 @import "tailwindcss";
 
 /* ===========================================================================
-   PALETTE — where these colours come from
+   RISHTA — DESIGN SYSTEM
    ---------------------------------------------------------------------------
-   This app arranges marriages, and the palette says so at a glance. It is
-   taken from the two physical objects every family in this audience already
-   associates with a rishta: the wedding invitation card and the bride's
-   wedding attire.
+   A modern product surface for a very traditional decision.
 
-     --paper    Warm ivory of a shaadi-card's cardstock. Not stark white — the
-                page should feel like an invitation, not a form. Not the
-                over-yellowed "AI cream" either; this is barely off-white so
-                text stays crisp on cheap, bright Android panels.
-     --ink      Deep plum-brown, the colour of letterpress ink on those cards.
-                Warmer than black, still 13:1+ contrast on the paper.
-     --stamp    Deep maroon — sindoor / bridal-lehenga red, darkened to the
-                shade used on wedding-card covers. This is the primary action
-                colour: auspicious and celebratory in this culture, and
-                unmistakably "shaadi" without being pink/flirty. (The token
-                keeps its old name so no component changes.)
-     --gold     Zari gold, used as hairline borders and small accents — the
-                gold foil rule on an invitation. Decorative only; never text
-                on light backgrounds (too low contrast), never a button fill.
-     --seal     Deep leaf green for "Verified" and the moment consent is
-                granted. Green reads as trust here and keeps maximum distance
-                from the maroon, so a verification stamp can never be mistaken
-                for an action.
-     --oxide    Burnt orange-red for decline / revoke / report. Deliberately
-                pushed towards orange so it cannot be confused with the maroon
-                primary — two reds meaning opposite things would be a trap.
-     --manila   Soft gold-tinted card stock for tabbed dividers.
+   The old sheet leaned on skeuomorphism: ivory "cardstock", 2px ink borders,
+   dotted rules, uppercase rubber stamps. It read as a 2009 government form.
+   This version keeps the emotional colour — rose, the one warm brand hue every
+   family already reads as "shaadi" — and rebuilds everything around it with
+   the grammar people now expect from an app:
 
-   Modernity comes from restraint, not effects: soft corners, one gentle
-   shadow level, generous whitespace, and exactly one decorative flourish (the
-   gold hairline under the masthead). No gradient heroes, no hearts, no
-   match-percentage rings — families here find dating-app grammar offensive.
+     · a cool near-white canvas with soft tinted depth, not fake paper
+     · hairline 1px separators and rings instead of heavy 2px boxes
+     · a real elevation scale (3 steps) instead of one flat shadow
+     · generous radii (12–28px) so nothing has a sharp bureaucratic corner
+     · gradient only where it means something: the brand mark and primary CTA
+     · soft-filled pill badges instead of uppercase stamps
 
-   Light only. The audience is parents aged 45–60 reading outdoors on a cheap
-   phone; a dark theme would drop legibility for no gain, so tokens do not
-   fork on prefers-color-scheme.
+   What did NOT change, because it was right: 16px type floor, 48px tap
+   targets, a Hindi second line on every decision, obvious focus rings, light
+   theme only (parents aged 45–60, cheap phones, read outdoors).
    =========================================================================== */
 
 :root {
-  --paper: #fbf7ef;
-  --paper-deep: #f3ecdd;
-  --card: #ffffff;
+  /* --- Canvas & surfaces --- */
+  --paper: rgb(255 248 220 / 0.55); /* recessed fills over the foil: inputs, hover rows */
+  --paper-deep: rgb(255 236 170 / 0.75); /* chips, skeletons, tab tracks */
+  --card: rgb(255 251 236 / 0.9); /* gold-glass panels, same as the sign-in box */
 
-  --ink: #3b2430;
-  --ink-2: #6d5561;
-  --ink-3: #97828c;
+  /* --- Text --- */
+  --ink: #3b0d1f;          /* deep maroon, the card's ink */
+  --ink-2: #6a2a44;        /* secondary copy */
+  --ink-3: #8f5a6c;        /* meta, labels, Hindi sublines */
 
-  --rule: #eadfcb;
-  --rule-strong: #d6c4a4;
+  /* --- Lines --- */
+  --rule: rgb(184 116 0 / 0.28); /* hairline separators, gold */
+  --rule-strong: #d9a520;  /* input borders, stronger dividers */
 
-  --stamp: #8a1e42;
-  --stamp-ink: #691331;
-  --stamp-wash: #faedf2;
+  /* --- Brand (pink). Token names kept from v1 so nothing else moves. --- */
+  --stamp: #db2777;
+  --stamp-ink: #be185d;
+  --stamp-soft: #f472b6;   /* light stop of the brand gradient */
+  --stamp-wash: #fdf2f8;
+  --stamp-ring: #fbcfe8;
 
-  --gold: #b8892e;
-  --gold-soft: #e7d4a8;
+  /* --- Accent (amber) — highlights, and the warm stop of the brand mark --- */
+  --gold: #e09a00;         /* bright gold, the card's foil */
+  --gold-soft: #ffe08a;
 
-  --seal: #166f4d;
-  --seal-wash: #e9f5ee;
+  /* --- Success / verified --- */
+  --seal: #047857;
+  --seal-wash: #ecfdf5;
 
-  --oxide: #b4400e;
-  --oxide-wash: #fcf0e7;
+  /* --- Destructive. Pushed to orange so two reds never mean opposites. --- */
+  --oxide: #ea580c;
+  --oxide-wash: #fff5ed;
 
-  --manila: #f0e4c6;
-  --manila-deep: #e3d1a4;
+  --manila: #f4efe4;
+  --manila-deep: #e6dcc6;
 
-  --focus: #1f6feb;
+  --focus: #4f46e5;
+
+  /* Always-dark surface (admin sidebar) — stays dark in both themes. */
+  --inverse: #2a1a12;
+
+  /* Frosted sticky bars. */
+  --glass: rgb(255 238 178 / 0.82);
+
+  /* Card-stock textures (gold, a few percent). */
+  --jaali: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cpath d='M28 2 L54 28 L28 54 L2 28 Z' fill='none' stroke='%23fff6d0' stroke-opacity='0.28' stroke-width='1'/%3E%3Ccircle cx='28' cy='28' r='1.6' fill='%23fff6d0' fill-opacity='0.4'/%3E%3C/svg%3E");
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.88 0 0 0 0 0.6 0 0 0 0 0 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------------------
+   Dark theme. Same tokens, night values. Follows the OS unless the family
+   picked one in Settings (html[data-theme]). Brand rose is lifted two steps so
+   it still reads on a near-black canvas; washes become deep tints.
+   --------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1b1210;
+    --paper-deep: #2a1d18;
+    --card: #231915;
+    --ink: #fbf1e6;
+    --ink-2: #d9c4ae;
+    --ink-3: #a08c78;
+    --rule: #3a2b22;
+    --rule-strong: #54402f;
+    --stamp: #f472b6;
+    --stamp-ink: #fbcfe8;
+    --stamp-soft: #ec4899;
+    --stamp-wash: #3a1a2b;
+    --stamp-ring: #5e2a45;
+    --gold: #ffc53d;
+    --gold-soft: #5a4310;
+    --seal: #34d399;
+    --seal-wash: #0c2a20;
+    --oxide: #fb923c;
+    --oxide-wash: #2c1708;
+    --manila: #221c14;
+    --manila-deep: #3a2f1e;
+    --focus: #818cf8;
+    --inverse: #120c0a;
+    --glass: rgb(27 18 16 / 0.84);
+    --jaali: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cpath d='M28 2 L54 28 L28 54 L2 28 Z' fill='none' stroke='%23e2b85c' stroke-opacity='0.09' stroke-width='1'/%3E%3Ccircle cx='28' cy='28' r='1.6' fill='%23e2b85c' fill-opacity='0.12'/%3E%3C/svg%3E");
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.89 0 0 0 0 0.72 0 0 0 0 0.36 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #1b1210;
+  --paper-deep: #2a1d18;
+  --card: #231915;
+  --ink: #fbf1e6;
+  --ink-2: #d9c4ae;
+  --ink-3: #a08c78;
+  --rule: #3a2b22;
+  --rule-strong: #54402f;
+  --stamp: #f472b6;
+  --stamp-ink: #fbcfe8;
+  --stamp-soft: #ec4899;
+  --stamp-wash: #3a1a2b;
+  --stamp-ring: #5e2a45;
+  --gold: #ffc53d;
+  --gold-soft: #5a4310;
+  --seal: #34d399;
+  --seal-wash: #0c2a20;
+  --oxide: #fb923c;
+  --oxide-wash: #2c1708;
+  --manila: #221c14;
+  --manila-deep: #3a2f1e;
+  --focus: #818cf8;
+  --inverse: #120c0a;
+  --glass: rgb(27 18 16 / 0.84);
+  --jaali: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cpath d='M28 2 L54 28 L28 54 L2 28 Z' fill='none' stroke='%23e2b85c' stroke-opacity='0.09' stroke-width='1'/%3E%3Ccircle cx='28' cy='28' r='1.6' fill='%23e2b85c' fill-opacity='0.12'/%3E%3C/svg%3E");
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.89 0 0 0 0 0.72 0 0 0 0 0.36 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  color-scheme: dark;
 }
 
 @theme inline {
+  --color-inverse: var(--inverse);
   --color-paper: var(--paper);
   --color-paper-deep: var(--paper-deep);
   --color-card: var(--card);
@@ -83,7 +154,9 @@
   --color-rule-strong: var(--rule-strong);
   --color-stamp: var(--stamp);
   --color-stamp-ink: var(--stamp-ink);
+  --color-stamp-soft: var(--stamp-soft);
   --color-stamp-wash: var(--stamp-wash);
+  --color-stamp-ring: var(--stamp-ring);
   --color-gold: var(--gold);
   --color-gold-soft: var(--gold-soft);
   --color-seal: var(--seal);
@@ -93,12 +166,30 @@
   --color-manila: var(--manila);
   --color-manila-deep: var(--manila-deep);
 
-  --font-sans: var(--font-geist-sans), "Segoe UI", system-ui, sans-serif;
+  --font-sans: var(--font-sans-body), "Segoe UI", system-ui, sans-serif;
+  --font-display: var(--font-sans-body), "Segoe UI", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --font-hindi: "Nirmala UI", "Noto Sans Devanagari", "Mangal", sans-serif;
+  --font-hindi: var(--font-noto-devanagari), "Nirmala UI", "Noto Sans Devanagari", "Mangal", sans-serif;
 
-  /* One shadow level. Depth is a whisper, not a UI element. */
-  --shadow-card: 0 1px 2px rgb(59 36 48 / 0.05), 0 2px 8px rgb(59 36 48 / 0.05);
+  /* One radius for every surface. Buttons, inputs, cards, sheets and tiles
+     all land on the same 10px corner, so nothing looks like a different app.
+     (rounded-full pills and circles are unaffected.) */
+  --radius-md: 0.625rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.625rem;
+  --radius-3xl: 0.875rem;
+
+  /* A real elevation scale. 1 = resting card, 2 = raised/hover, 3 = overlay. */
+  --shadow-e1: 0 1px 2px rgb(43 22 31 / 0.04), 0 1px 3px rgb(43 22 31 / 0.05);
+  --shadow-e2: 0 2px 4px rgb(43 22 31 / 0.04), 0 8px 20px -6px rgb(43 22 31 / 0.12);
+  --shadow-e3: 0 8px 16px -4px rgb(43 22 31 / 0.1), 0 24px 48px -12px rgb(43 22 31 / 0.22);
+  /* Kept: components not yet touched still say shadow-card. */
+  --shadow-card: var(--shadow-e1);
+  /* The primary button's own light — brand-tinted, never grey. */
+  --shadow-brand: 0 1px 2px rgb(190 24 93 / 0.24), 0 6px 16px -6px rgb(190 24 93 / 0.45);
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @layer base {
@@ -108,20 +199,68 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /* A page must never scroll sideways. One stray wide element on a phone
+     makes the whole layout look narrower than the screen (iOS Safari pans
+     to the overflow). Clip it at the root and let the slider manage its own. */
+  html,
   body {
-    background-color: var(--paper);
+    overflow-x: clip;
+    width: 100%;
+  }
+
+  body {
+    background-color: #e9a500;
     color: var(--ink);
     font-family: var(--font-sans);
     font-size: 1rem;
     line-height: 1.55;
+    /* The gold foil of the wedding card, with the jaali printed over it and
+       a soft light at the top — the same surface as the sign-in screen, so
+       every screen is one card. */
+    background-image:
+      radial-gradient(40rem 24rem at 50% 0%, rgb(255 255 255 / 0.3), transparent 70%),
+      var(--jaali),
+      linear-gradient(135deg, #d98f00 0%, #f2b300 22%, #ffe36b 46%, #f5bd12 58%, #d98f00 82%, #f0b000 100%);
+    background-size: auto, 56px 56px, auto;
+    background-repeat: no-repeat, repeat, no-repeat;
+    background-attachment: scroll, scroll, fixed;
+  }
+
+  /* Dark is a family's explicit choice: a deep maroon-brown card with the
+     gold jaali on it instead of the foil. */
+  :root[data-theme="dark"] body {
+    background-color: var(--paper);
+    background-image: var(--jaali), var(--grain);
+    background-size: 56px 56px, 240px 240px;
+    background-repeat: repeat, repeat;
+    background-attachment: scroll, scroll;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) body {
+      background-color: var(--paper);
+      background-image: var(--jaali), var(--grain);
+      background-size: 56px 56px, 240px 240px;
+      background-repeat: repeat, repeat;
+      background-attachment: scroll, scroll;
+    }
+  }
+
+  /* Headings get modern optical tightening; body copy stays untouched. */
+  /* Titles: the same family, heavier and tighter. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.02em;
   }
 
   /* Focus must be obvious for someone tabbing with a cheap keyboard or a
-     screen-reader; never remove it, never make it subtle. */
+     screen reader; never remove it, never make it subtle. */
   :focus-visible {
-    outline: 3px solid var(--focus);
+    outline: 2.5px solid var(--focus);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: 8px;
   }
 
   button,
@@ -138,6 +277,11 @@
     -webkit-appearance: none;
     margin: 0;
   }
+
+  ::selection {
+    background: var(--stamp-ring);
+    color: var(--stamp-ink);
+  }
 }
 
 @layer utilities {
@@ -146,36 +290,79 @@
   .hindi {
     font-family: var(--font-hindi);
     font-size: 0.8125rem;
-    line-height: 1.3;
+    line-height: 1.35;
     font-weight: 400;
   }
 
-  /* The register entry code: RSH-104. Monospaced like a ledger column. */
+  /* The register entry code: RSH-104. Tabular so codes align in a column. */
   .code {
     font-family: var(--font-mono);
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
     font-variant-numeric: tabular-nums;
   }
 
-  /* A stamped impression — ink-bordered, never filled. Kept from the bureau
-     idiom for badges: Verified, Waiting, Declined. */
-  .stamped {
-    border: 2px solid currentColor;
-    border-radius: 6px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-weight: 700;
+  /* Display type for page titles and the wordmark. */
+  .display {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+    font-weight: 800;
   }
 
-  /* The zari rule: the gold foil hairline from a wedding card. The one
-     decorative flourish in the app — masthead and section dividers only. */
+  /* Soft-filled pill badge. Replaces the uppercase rubber stamp: same job,
+     current grammar. Colour comes from the caller's text/bg classes. */
+  .stamped {
+    border-radius: 999px;
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px currentColor;
+  }
+
+  /* Metallic gold foil — the sheen of a wedding card's gold, a diagonal
+     light band across saturated gold. Fixed hex so it is the same foil in
+     both themes. `.foil` is a surface; `.foil-text` paints type with it. */
+  .foil {
+    background-color: #e9a500;
+    background-image: linear-gradient(
+      135deg,
+      #d98f00 0%,
+      #f2b300 22%,
+      #ffe36b 46%,
+      #f5bd12 58%,
+      #d98f00 82%,
+      #f0b000 100%
+    );
+  }
+  .foil-text {
+    background-image: linear-gradient(135deg, #b87400, #f2b300 35%, #ffe36b 55%, #d98f00 80%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Frosted sticky surface for the header and the bottom bar. */
+  .glass {
+    background-color: var(--glass);
+    backdrop-filter: saturate(180%) blur(16px);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+  }
+
+  /* The brand gradient: rose into deep rose. Used on the logo mark and the
+     primary CTA and nowhere else — a gradient that appears everywhere stops
+     meaning "this is the app speaking". */
+  .brand-gradient {
+    /* Fixed hex on purpose: the gradient must stay the same in dark mode,
+       where the --stamp tokens lighten for text contrast. */
+    background-image: linear-gradient(135deg, #f472b6 0%, #db2777 55%, #be185d 100%);
+  }
+
+  /* Accent hairline under the header. The old gold-foil rule, restrained to a
+     1px brand fade. */
   .zari {
     background-image: linear-gradient(
       90deg,
       transparent,
-      var(--gold) 18%,
-      var(--gold-soft) 50%,
-      var(--gold) 82%,
+      rgb(224 154 0 / 0.6) 22%,
+      rgb(255 214 74 / 1) 50%,
+      rgb(224 154 0 / 0.6) 78%,
       transparent
     );
   }
@@ -184,18 +371,48 @@
      hue pair so two profiles never look identical, but no gradient ever
      resembles a person. */
   .photo-withheld {
-    filter: blur(14px) saturate(0.7);
-    transform: scale(1.15);
+    filter: blur(16px) saturate(0.75);
+    transform: scale(1.2);
+  }
+
+  /* Horizontal card strip: no visible scrollbar, swipe and arrows only. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 
   .tap {
     min-height: 48px;
     min-width: 48px;
   }
+
+  /* Cards rise a little on hover — the one motion affordance in lists. */
+  .lift {
+    transition:
+      transform 200ms var(--ease-out-soft),
+      box-shadow 200ms var(--ease-out-soft),
+      border-color 200ms var(--ease-out-soft);
+  }
+
+  /* Skeleton sweep. Set as a background so one class does the whole effect. */
+  .shimmer {
+    background-image: linear-gradient(
+      90deg,
+      var(--paper-deep) 0%,
+      var(--paper-deep) 35%,
+      var(--card) 50%,
+      var(--paper-deep) 65%,
+      var(--paper-deep) 100%
+    );
+    background-size: 220% 100%;
+    animation: rishta-sweep 1.5s linear infinite;
+  }
 }
 
 /* Someone who asked the OS to stop animations gets no animation, including the
-   sheet slide and the skeleton shimmer. */
+   sheet slide and the skeleton sweep. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -225,12 +442,33 @@
   }
 }
 
+@keyframes rishta-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rishta-sweep {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+
+/* Kept for any component still referencing the old blink. */
 @keyframes rishta-pulse {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.45;
+    opacity: 0.5;
   }
 }

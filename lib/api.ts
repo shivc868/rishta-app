@@ -17,8 +17,10 @@
 import { db } from './store';
 import { haversineKm } from './cities';
 import type {
+  Complexion,
   BrowseCard,
   Religion,
+  SocialCategory,
   ConnectionStage,
   ConnectionState,
   ConnectionSummary,
@@ -33,6 +35,7 @@ import type {
   OccupationCategory,
   OutgoingGrantView,
   Paginated,
+  PartnerPreferences,
   Profile,
   ProfileFilters,
   ProfileStatus,
@@ -152,13 +155,26 @@ export async function verifyOtp(phone: string, code: string): Promise<Session> {
   if (!/^\d{6}$/.test(code)) {
     throw new ApiError('NOT_AUTHENTICATED', 'The code is 6 digits. Enter all six and try again.');
   }
-  const digits = `+91${phone.replace(/\D/g, '').slice(-10)}`;
+  return signInAsAccount(`+91${phone.replace(/\D/g, '').slice(-10)}`);
+}
+
+/**
+ * Google sign-in (faked). Accounts are keyed by phone, so a Google account is
+ * stored under a `google:<email>` key until the register moves to Supabase.
+ */
+export async function signInWithGoogle(email: string): Promise<Session> {
+  await delay(400);
+  return signInAsAccount(`google:${email.trim().toLowerCase()}`);
+}
+
+/** Finds or creates the account behind `key` and opens a session for it. */
+function signInAsAccount(key: string): Session {
   const store = db();
-  let account = store.accounts.find((a) => a.phone === digits);
+  let account = store.accounts.find((a) => a.phone === key);
   if (!account) {
     account = {
       id: store.takeId('acc-'),
-      phone: digits,
+      phone: key,
       createdAt: nowIso(),
       ownedProfileIds: [],
     };
@@ -200,18 +216,6 @@ export async function getActiveProfile(): Promise<Profile | null> {
   return profiles.find((p) => p.id === session.activeProfileId) ?? null;
 }
 
-export async function switchActiveProfile(profileId: string): Promise<Session> {
-  await delay(120);
-  const session = requireSession();
-  const account = db().accounts.find((a) => a.id === session.accountId);
-  if (!account?.ownedProfileIds.includes(profileId)) {
-    throw new ApiError('FORBIDDEN', 'You can only switch to a profile you created.');
-  }
-  const next: Session = { ...session, activeProfileId: profileId };
-  db().setSession(next);
-  return next;
-}
-
 // ---------------------------------------------------------------------------
 // Onboarding
 // ---------------------------------------------------------------------------
@@ -222,12 +226,14 @@ export interface ProfileDraft {
   dob: string;
   heightCm: number;
   weightBand: string;
+  complexion: Complexion;
   education: string;
   educationLevel: EducationLevel;
   occupation: string;
   occupationCategory: OccupationCategory;
   incomeBand: IncomeBand;
   religion: Religion;
+  category: SocialCategory;
   community: string;
   state: string;
   district: string;
@@ -242,11 +248,17 @@ export interface ProfileDraft {
   familyBrief: string;
 }
 
-/** Creates the profile in `pending_review`. Returns the new public code. */
+/** Creates the profile live in the register. Returns the new public code. */
 export async function createProfile(draft: ProfileDraft): Promise<Profile> {
   await delay(600);
   const session = requireSession();
   const store = db();
+  // One account holds exactly one biodata. A second wizard run is a mistake,
+  // not a feature — edits happen in Settings instead.
+  const owner = store.accounts.find((a) => a.id === session.accountId);
+  if (owner && owner.ownedProfileIds.length > 0) {
+    throw new ApiError('FORBIDDEN', 'This account already holds a biodata. Edit it from Settings.');
+  }
   const id = store.takeId('p-');
   const nextCode = 100 + store.profiles.length + 1;
 
@@ -257,12 +269,14 @@ export async function createProfile(draft: ProfileDraft): Promise<Profile> {
     dob: draft.dob,
     heightCm: draft.heightCm,
     weightBand: draft.weightBand,
+    complexion: draft.complexion,
     education: draft.education,
     educationLevel: draft.educationLevel,
     occupation: draft.occupation,
     occupationCategory: draft.occupationCategory,
     incomeBand: draft.incomeBand,
     religion: draft.religion,
+    category: draft.category,
     community: draft.community,
     state: draft.state,
     district: draft.district,
@@ -275,8 +289,9 @@ export async function createProfile(draft: ProfileDraft): Promise<Profile> {
     manglik: draft.manglik,
     about: draft.about,
     familyBrief: draft.familyBrief,
-    status: 'pending_review',
+    status: 'active',
     isVerified: false,
+    isSeed: false,
     createdAt: nowIso(),
     lastActiveAt: nowIso(),
   };
@@ -313,49 +328,16 @@ function buildConnectionState(viewerId: string, otherId: string): ConnectionStat
 
   const between = store.requests.filter(
     (r) =>
-      (r.fromProfileId === viewerId && r.toProfileId === otherId) ||
-      (r.fromProfileId === otherId && r.toProfileId === viewerId),
+      r.type === 'contact' &&
+      ((r.fromProfileId === viewerId && r.toProfileId === otherId) ||
+        (r.fromProfileId === otherId && r.toProfileId === viewerId)),
   );
 
-  const interests = between.filter((r) => r.type === 'interest');
-  const acceptedInterest = interests.find((r) => r.status === 'accepted') ?? null;
-  const pendingInterest = interests.find((r) => r.status === 'pending') ?? null;
-  const lastDeclined = interests
-    .filter((r) => r.status === 'declined')
-    .sort((a, b) => (a.respondedAt ?? '').localeCompare(b.respondedAt ?? ''))
-    .at(-1) ?? null;
-
-  const connected = Boolean(acceptedInterest);
-
-  let stage: ConnectionStage = 'browsing';
-  let interest: Request | null = acceptedInterest;
-  if (connected) {
-    stage = 'connected';
-  } else if (pendingInterest) {
-    interest = pendingInterest;
-    stage = pendingInterest.fromProfileId === viewerId ? 'interest_sent' : 'interest_received';
-  } else if (lastDeclined) {
-    interest = lastDeclined;
-    stage = lastDeclined.fromProfileId === viewerId ? 'declined_by_them' : 'declined_by_me';
-  }
-
-  // Cooldown applies only to the side that was turned down.
-  let cooldownUntil: string | null = null;
-  if (lastDeclined?.fromProfileId === viewerId && lastDeclined.respondedAt) {
-    const until = new Date(lastDeclined.respondedAt).getTime() + DECLINE_COOLDOWN_DAYS * DAY;
-    if (until > at) cooldownUntil = new Date(until).toISOString();
-  }
-
-  const activeGrants = store.grants.filter((g) => isGrantActive(g, at));
-  const grantBetween = (grantee: string, target: string, scope: Grant['scope']) =>
-    activeGrants.find(
-      (g) => g.granteeProfileId === grantee && g.targetProfileId === target && g.scope === scope,
-    ) ?? null;
-
-  const photoGrantToMe = grantBetween(viewerId, otherId, 'photo');
-  const photoGrantToThem = grantBetween(otherId, viewerId, 'photo');
-  const contactToMe = grantBetween(viewerId, otherId, 'contact');
-  const contactToThem = grantBetween(otherId, viewerId, 'contact');
+  const activeGrants = store.grants.filter((g) => g.scope === 'contact' && isGrantActive(g, at));
+  const contactToMe =
+    activeGrants.find((g) => g.granteeProfileId === viewerId && g.targetProfileId === otherId) ?? null;
+  const contactToThem =
+    activeGrants.find((g) => g.granteeProfileId === otherId && g.targetProfileId === viewerId) ?? null;
 
   const pendingOutgoing: ConnectionState['pendingOutgoing'] = {};
   const pendingIncoming: ConnectionState['pendingIncoming'] = {};
@@ -365,21 +347,52 @@ function buildConnectionState(viewerId: string, otherId: string): ConnectionStat
     else pendingIncoming[r.type] = r;
   }
 
-  const iSharedContact = Boolean(contactToThem);
+  // The viewer's own asks, newest first — what the stage is judged on.
+  const mine = between
+    .filter((r) => r.fromProfileId === viewerId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const lastDeclined = mine.find((r) => r.status === 'declined') ?? null;
+
+  let stage: ConnectionStage = 'browsing';
+  let request: Request | null = null;
+  if (contactToMe) {
+    stage = 'number_shared';
+    request = mine.find((r) => r.status === 'accepted') ?? null;
+  } else if (pendingOutgoing.contact) {
+    stage = 'request_sent';
+    request = pendingOutgoing.contact;
+  } else if (pendingIncoming.contact) {
+    stage = 'request_received';
+    request = pendingIncoming.contact;
+  } else if (lastDeclined) {
+    stage = 'declined_by_them';
+    request = lastDeclined;
+  } else {
+    const theirsDeclined = between.find(
+      (r) => r.toProfileId === viewerId && r.status === 'declined',
+    );
+    if (theirsDeclined) {
+      stage = 'declined_by_me';
+      request = theirsDeclined;
+    }
+  }
+
+  // Cooldown applies only to the side that was turned down.
+  let cooldownUntil: string | null = null;
+  if (lastDeclined?.respondedAt && !contactToMe) {
+    const until = new Date(lastDeclined.respondedAt).getTime() + DECLINE_COOLDOWN_DAYS * DAY;
+    if (until > at) cooldownUntil = new Date(until).toISOString();
+  }
+
   const theySharedContact = Boolean(contactToMe);
 
   return {
     otherProfileId: otherId,
     stage,
-    interest,
-    canSeePhotos: Boolean(photoGrantToMe),
-    theyCanSeeMyPhotos: Boolean(photoGrantToThem),
-    photoGrantToMe,
-    photoGrantToThem,
-    iSharedContact,
+    request,
+    iSharedContact: Boolean(contactToThem),
     theySharedContact,
-    // Rule 5, the strict form: one-sided approval reveals nothing.
-    canSeeContact: iSharedContact && theySharedContact,
+    canSeeContact: theySharedContact,
     pendingOutgoing,
     pendingIncoming,
     cooldownUntil,
@@ -425,14 +438,225 @@ function matchesFilters(p: Profile, f: ProfileFilters, viewer: Profile): boolean
   }
   if (f.incomeBand?.length && !f.incomeBand.includes(p.incomeBand)) return false;
   if (f.religion?.length && !f.religion.includes(p.religion)) return false;
-  if (f.community?.length && !f.community.includes(p.community)) return false;
+  if (f.category?.length && !f.category.includes(p.category)) return false;
   if (f.state && p.state !== f.state) return false;
   if (f.district && p.district !== f.district) return false;
   if (f.city && p.city !== f.city) return false;
   if (f.maxDistanceKm !== undefined && distanceFor(viewer, p) > f.maxDistanceKm) return false;
   if (f.manglik?.length && !f.manglik.includes(p.manglik)) return false;
+  if (f.diet?.length && !f.diet.includes(p.diet)) return false;
   if (f.verifiedOnly && !p.isVerified) return false;
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Partner preferences
+// ---------------------------------------------------------------------------
+
+/**
+ * What a family is assumed to want until they say otherwise — the same
+ * starting point a matrimony site fills in at sign-up from the biodata:
+ * the customary age window, the same religion and the same marital standing.
+ * Place, manglik, education and the rest stay open until the family narrows
+ * them in Settings, so a brand-new profile sees a list rather than a blank.
+ * These defaults are never stored; saving from Settings is what persists.
+ */
+export function defaultPreferencesFor(): PartnerPreferences {
+  // Nothing by default: until the family sets a preference, the Matches order
+  // comes straight from the biodata-to-biodata compatibility score.
+  return {};
+}
+
+/** Stored preferences, or the derived defaults when the family has not set any. */
+function preferencesFor(p: Profile): { prefs: PartnerPreferences; isDefault: boolean } {
+  const row = db().preferences.find((x) => x.profileId === p.id);
+  return row ? { prefs: row.prefs, isDefault: false } : { prefs: defaultPreferencesFor(), isDefault: true };
+}
+
+/** Drop keys that mean "doesn't matter", so an empty list never counts as a criterion. */
+function cleanPreferences(prefs: PartnerPreferences): PartnerPreferences {
+  const out: PartnerPreferences = {};
+  for (const [k, v] of Object.entries(prefs) as Array<[keyof PartnerPreferences, unknown]>) {
+    if (k === ('sort' as string)) continue;
+    if (v === undefined || v === null || v === '' || v === false) continue;
+    if (Array.isArray(v) && v.length === 0) continue;
+    (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
+}
+
+export async function getPartnerPreferences(): Promise<{
+  prefs: PartnerPreferences;
+  /** True while the family is still on the derived defaults. */
+  isDefault: boolean;
+}> {
+  await delay(80);
+  return preferencesFor(requireActiveProfile());
+}
+
+export async function updatePartnerPreferences(
+  prefs: PartnerPreferences,
+): Promise<PartnerPreferences> {
+  await delay(300);
+  const profile = requireActiveProfile();
+  const clean = cleanPreferences(prefs);
+  db().upsertPreference({ profileId: profile.id, prefs: clean, updatedAt: new Date().toISOString() });
+  return clean;
+}
+
+/** Does `candidate` satisfy every criterion `owner` set? Distance is measured from the owner. */
+function satisfiesPreferences(owner: Profile, candidate: Profile): boolean {
+  return matchesFilters(candidate, preferencesFor(owner).prefs, owner);
+}
+
+/**
+ * Preference tier — the first sort key everywhere a list is "best match":
+ *   2  2-way: fits the viewer's preferences AND the viewer fits theirs
+ *   1  fits the viewer's preferences
+ *   0  everything else
+ * Nothing is hidden by this; it only decides who is at the top.
+ */
+function preferenceTier(
+  viewer: Profile,
+  p: Profile,
+): { tier: 0 | 1 | 2; isExact: boolean; isMutual: boolean } {
+  const isExact = satisfiesPreferences(viewer, p);
+  const isMutual = isExact && satisfiesPreferences(p, viewer);
+  return { tier: isMutual ? 2 : isExact ? 1 : 0, isExact, isMutual };
+}
+
+/**
+ * Best-match score, in the family's own priority order:
+ *
+ *   1. Place — same tehsil first, then same district, same state, then by
+ *      plain distance. The biggest slice of the score by far.
+ *   2. Manglik — a manglik viewer sees manglik profiles first (and a
+ *      non-manglik viewer sees non-manglik first); "unknown" sits between.
+ *   3. Marital status — a divorced or widowed family sees divorced/widowed
+ *      profiles first; a never-married family sees never-married first.
+ *   4. Jati.
+ *   5. Fit — the finer signals a family weighs once the above all line up:
+ *      customary age gap (boy 0–5 years older), education, income, height,
+ *      diet, then verification and recent activity. These break the ties
+ *      that rules 1–4 leave behind, so two same-tehsil profiles are not
+ *      ordered merely by who opened the app last.
+ *
+ * Weights are separated by magnitude so a lower rule can never outvote a
+ * higher one: the whole fit tier (max 79) is worth less than one jati point
+ * band (80). This only ORDERS the list — nothing is hidden by it.
+ *
+ * Every compatibility rule is symmetric — score(a, b) === score(b, a) — so a
+ * profile that ranks high for the viewer also has the viewer ranking high for
+ * it. That is the reciprocity a match needs, without a separate preference
+ * table. Only the two small nudges at the end (verified, recently active)
+ * look at one side.
+ */
+function matchScore(viewer: Profile, p: Profile): number {
+  let score = 0;
+
+  // 1. Place — 0..1000
+  if (p.city === viewer.city && p.district === viewer.district) score += 1000;
+  else if (p.district === viewer.district && p.state === viewer.state) score += 700;
+  else if (p.state === viewer.state) score += 400;
+  else score += Math.max(0, 250 - distanceFor(viewer, p));
+
+  // 2. Manglik — 0..250
+  const vM = viewer.manglik;
+  const pM = p.manglik;
+  if (vM === 'yes' || vM === 'partial') {
+    score += pM === 'yes' || pM === 'partial' ? 250 : pM === 'unknown' ? 125 : 0;
+  } else if (vM === 'no') {
+    score += pM === 'no' ? 250 : pM === 'unknown' ? 125 : 0;
+  } else {
+    score += 125; // viewer unknown — manglik should not reorder their list much
+  }
+
+  // 3. Marital status — 0..150
+  const remarriage = (m: Profile['maritalStatus']) => m !== 'never_married';
+  if (p.maritalStatus === viewer.maritalStatus) score += 150;
+  else if (remarriage(p.maritalStatus) === remarriage(viewer.maritalStatus)) score += 100;
+
+  // 4. Jati — 0..80
+  if (p.community === viewer.community && p.religion === viewer.religion) score += 80;
+  else if (p.religion === viewer.religion) score += 40;
+
+  // 5. Fit — 0..79
+  score += fitScore(viewer, p);
+
+  return score;
+}
+
+/** Low → high, mirrors the IncomeBand union. Index distance = band gap. */
+const INCOME_ORDER: IncomeBand[] = [
+  'upto_15k',
+  '15k_25k',
+  '25k_35k',
+  '35k_45k',
+  '45k_55k',
+  '55k_65k',
+  '65k_75k',
+  '75k_85k',
+  '85k_1l',
+  'above_1l',
+];
+
+/** Rough rungs. Professional (CA, MBBS, LLB) sits with masters, not above doctorate. */
+const EDUCATION_RANK: Record<EducationLevel, number> = {
+  high_school: 0,
+  diploma: 1,
+  bachelors: 2,
+  masters: 3,
+  professional: 3,
+  doctorate: 4,
+  teaching: 2, // B.Ed sits on a graduate degree; TET/PAT on top of that
+  other: 2, // unknown level: treat as middle of the ladder, neither a bonus nor a penalty
+};
+
+const RECENTLY_ACTIVE_DAYS = 7;
+
+/**
+ * Rule 5 of `matchScore`. Weights sum to 79 so the tier as a whole stays
+ * below a single jati band. Age gap is the largest slice because it is the
+ * first thing a family checks after place and jati.
+ */
+function fitScore(viewer: Profile, p: Profile): number {
+  let score = 0;
+
+  // Boy's side minus girl's side, for the two customs that have a direction.
+  const [boy, girl] = viewer.gender === 'male' ? [viewer, p] : [p, viewer];
+
+  // Age gap — 0..24. Boy 0–5 years older is the custom; taper outside it.
+  const ageGap = ageFromDob(boy.dob) - ageFromDob(girl.dob);
+  if (ageGap >= 0 && ageGap <= 5) score += 24;
+  else score += Math.max(0, 24 - Math.abs(ageGap - 2.5) * 5);
+
+  // Education — 0..15. Same rung best; one rung apart is normal.
+  const eduGap = Math.abs(EDUCATION_RANK[viewer.educationLevel] - EDUCATION_RANK[p.educationLevel]);
+  score += eduGap === 0 ? 15 : eduGap === 1 ? 10 : eduGap === 2 ? 4 : 0;
+
+  // Income — 0..12. Within one band feels like the same standing.
+  const incomeGap = Math.abs(
+    INCOME_ORDER.indexOf(viewer.incomeBand) - INCOME_ORDER.indexOf(p.incomeBand),
+  );
+  score += incomeGap <= 1 ? 12 : incomeGap === 2 ? 8 : incomeGap === 3 ? 4 : 0;
+
+  // Height — 0..12. Boy taller by 5–20 cm is what biodata sheets ask for.
+  const heightGap = boy.heightCm - girl.heightCm;
+  if (heightGap >= 5 && heightGap <= 20) score += 12;
+  else if (heightGap >= 0 && heightGap <= 25) score += 7;
+
+  // Diet — 0..8. Same diet best; vegetarian and Jain households mix easily.
+  const vegLike = (d: Profile['diet']) => d === 'vegetarian' || d === 'jain_vegetarian';
+  if (p.diet === viewer.diet) score += 8;
+  else if (vegLike(p.diet) && vegLike(viewer.diet)) score += 5;
+
+  // Verified — 0..4. A checked biodata is worth a nudge, never a rule.
+  if (p.isVerified) score += 4;
+
+  // Recently active — 0..4. A family that will actually answer.
+  if (Date.now() - new Date(p.lastActiveAt).getTime() <= RECENTLY_ACTIVE_DAYS * DAY) score += 4;
+
+  return score;
 }
 
 export async function getProfiles(
@@ -442,11 +666,19 @@ export async function getProfiles(
   const viewer = requireActiveProfile();
   const rows = visibleProfilesFor(viewer).filter((p) => matchesFilters(p, filters, viewer));
 
-  const sorted = [...rows].sort((a, b) =>
-    filters.sort === 'recently_active'
-      ? b.lastActiveAt.localeCompare(a.lastActiveAt)
-      : b.createdAt.localeCompare(a.createdAt),
-  );
+  const sort = filters.sort ?? 'best_match';
+  const tiers = new Map(rows.map((p) => [p.id, preferenceTier(viewer, p)]));
+  const sorted = [...rows].sort((a, b) => {
+    if (sort === 'recently_active') return b.lastActiveAt.localeCompare(a.lastActiveAt);
+    if (sort === 'newest') return b.createdAt.localeCompare(a.createdAt);
+    // Best match — profiles that fit the family's preferences first, then the
+    // compatibility score; ties go to the more recently active family.
+    return (
+      tiers.get(b.id)!.tier - tiers.get(a.id)!.tier ||
+      matchScore(viewer, b) - matchScore(viewer, a) ||
+      b.lastActiveAt.localeCompare(a.lastActiveAt)
+    );
+  });
 
   return {
     items: sorted.map((profile) => ({
@@ -457,6 +689,8 @@ export async function getProfiles(
         (s) => s.ownerProfileId === viewer.id && s.targetProfileId === profile.id,
       ),
       stage: buildConnectionState(viewer.id, profile.id).stage,
+      isExact: tiers.get(profile.id)!.isExact,
+      isMutual: tiers.get(profile.id)!.isMutual,
     })),
     total: sorted.length,
   };
@@ -467,6 +701,53 @@ export async function getProfiles(
  * Powers the bottom sheet's "Show 34 profiles" button and the relax-filter
  * suggestion on the empty state.
  */
+/**
+ * Matches — every visible profile, nothing hidden, ordered so the suggestions
+ * at the top are the exact ones: 2-way matches first (both families'
+ * preferences fit), then profiles that fit the viewer's preferences, then the
+ * rest by compatibility score. Each card carries its tier so the UI can stamp it.
+ */
+export async function getMatchedProfiles(): Promise<BrowseCard[]> {
+  await delay();
+  const viewer = requireActiveProfile();
+  const rows = visibleProfilesFor(viewer)
+    .map((profile) => ({
+      profile,
+      ...preferenceTier(viewer, profile),
+      score: matchScore(viewer, profile),
+    }))
+    .sort(
+      (a, b) =>
+        b.tier - a.tier ||
+        b.score - a.score ||
+        b.profile.lastActiveAt.localeCompare(a.profile.lastActiveAt),
+    );
+
+  return rows.map(({ profile, isExact, isMutual }) => ({
+    profile,
+    age: ageFromDob(profile.dob),
+    distanceKm: distanceFor(viewer, profile),
+    isShortlisted: db().shortlists.some(
+      (s) => s.ownerProfileId === viewer.id && s.targetProfileId === profile.id,
+    ),
+    stage: buildConnectionState(viewer.id, profile.id).stage,
+    isExact,
+    isMutual,
+  }));
+}
+
+/** How many of the visible profiles fit the preferences — for the Matches header. */
+export async function getMatchCounts(): Promise<{ total: number; exact: number; mutual: number }> {
+  await delay(60);
+  const viewer = requireActiveProfile();
+  const rows = visibleProfilesFor(viewer).map((p) => preferenceTier(viewer, p));
+  return {
+    total: rows.length,
+    exact: rows.filter((r) => r.isExact).length,
+    mutual: rows.filter((r) => r.isMutual).length,
+  };
+}
+
 export async function countProfiles(filters: ProfileFilters = {}): Promise<number> {
   await delay(60);
   const viewer = requireActiveProfile();
@@ -476,7 +757,6 @@ export async function countProfiles(filters: ProfileFilters = {}): Promise<numbe
 /** Distinct values present in the viewer's visible set — filters never offer a dead option. */
 export async function getFilterOptions(): Promise<{
   religions: Religion[];
-  jatis: string[];
   ageRange: [number, number];
   heightRange: [number, number];
 }> {
@@ -487,7 +767,6 @@ export async function getFilterOptions(): Promise<{
   const heights = rows.map((p) => p.heightCm);
   return {
     religions: [...new Set(rows.map((p) => p.religion))].sort(),
-    jatis: [...new Set(rows.map((p) => p.community))].sort(),
     ageRange: [Math.min(...ages, 21), Math.max(...ages, 35)],
     heightRange: [Math.min(...heights, 145), Math.max(...heights, 190)],
   };
@@ -518,17 +797,13 @@ export async function getProfile(code: string): Promise<ProfileView> {
   const revealed: ProfileView['revealed'] = {
     phoneMasked: maskPhone(priv?.phone ?? ''),
   };
+  // One gate: the other family said yes to the number request.
   if (isOwn || connection.canSeeContact) {
     revealed.fullName = priv?.fullName;
     revealed.phone = priv?.phone;
     revealed.exactAddress = priv?.exactAddress;
-  }
-  if (isOwn || connection.canSeePhotos) {
-    revealed.photoUrls = priv?.photoUrls ?? [];
-  }
-  // Extended family detail opens at stage 2 — connected, but still no photo/number.
-  if (isOwn || connection.stage === 'connected') {
     revealed.familyDetails = priv?.familyDetails;
+    revealed.photoUrls = priv?.photoUrls ?? [];
   }
 
   return {
@@ -551,9 +826,9 @@ export async function getConnectionState(otherProfileId: string): Promise<Connec
 // ---------------------------------------------------------------------------
 
 /**
- * Stage guard. Interest is the only request allowed before connection;
- * photo and contact require an accepted interest. Buttons cannot skip ahead
- * because this throws before the row is written.
+ * The only request the app sends is for the number. The guards here keep a
+ * family from asking twice, asking someone who already said yes, or asking
+ * again inside the cooldown after a no.
  */
 export async function sendRequest(
   toProfileId: string,
@@ -574,35 +849,24 @@ export async function sendRequest(
     );
   }
 
+  if (type !== 'contact') {
+    throw new ApiError('FORBIDDEN', 'Only a number request can be sent.');
+  }
+
   const conn = buildConnectionState(viewer.id, toProfileId);
 
-  if (conn.pendingOutgoing[type]) {
-    throw new ApiError('DUPLICATE_REQUEST', 'You have already sent this request. Wait for a reply.');
+  if (conn.pendingOutgoing.contact) {
+    throw new ApiError('DUPLICATE_REQUEST', 'You have already asked. Wait for their answer.');
   }
-  if (type === 'interest') {
-    if (conn.stage === 'connected') {
-      throw new ApiError('DUPLICATE_REQUEST', 'You are already connected with this profile.');
-    }
-    if (conn.cooldownUntil) {
-      const days = Math.ceil((new Date(conn.cooldownUntil).getTime() - Date.now()) / DAY);
-      throw new ApiError(
-        'COOLDOWN_ACTIVE',
-        `This family declined earlier. You can send interest again in ${days} day${days === 1 ? '' : 's'}.`,
-      );
-    }
-  } else {
-    if (conn.stage !== 'connected') {
-      throw new ApiError(
-        'NOT_CONNECTED',
-        'Send an interest first. Photos and numbers open only after both families agree.',
-      );
-    }
-    if (type === 'photo' && conn.canSeePhotos) {
-      throw new ApiError('DUPLICATE_REQUEST', 'You can already see these photos.');
-    }
-    if (type === 'contact' && conn.theySharedContact) {
-      throw new ApiError('DUPLICATE_REQUEST', 'They have already shared their number with you.');
-    }
+  if (conn.theySharedContact) {
+    throw new ApiError('DUPLICATE_REQUEST', 'They have already shared their number with you.');
+  }
+  if (conn.cooldownUntil) {
+    const days = Math.ceil((new Date(conn.cooldownUntil).getTime() - Date.now()) / DAY);
+    throw new ApiError(
+      'COOLDOWN_ACTIVE',
+      `This family declined earlier. You can ask again in ${days} day${days === 1 ? '' : 's'}.`,
+    );
   }
 
   const store = db();
@@ -726,24 +990,37 @@ export async function getConnections(): Promise<ConnectionSummary[]> {
   await delay();
   const viewer = requireActiveProfile();
   const store = db();
-  const accepted = store.requests.filter(
-    (r) =>
-      r.type === 'interest' &&
-      r.status === 'accepted' &&
-      (r.fromProfileId === viewer.id || r.toProfileId === viewer.id),
-  );
 
-  return accepted
-    .map((r) => {
-      const otherId = r.fromProfileId === viewer.id ? r.toProfileId : r.fromProfileId;
+  // Every family a number has passed between, in either direction.
+  const others = new Map<string, string>(); // otherId -> when the first grant landed
+  for (const g of store.grants) {
+    if (g.scope !== 'contact' || !isGrantActive(g)) continue;
+    const otherId =
+      g.granteeProfileId === viewer.id
+        ? g.targetProfileId
+        : g.targetProfileId === viewer.id
+          ? g.granteeProfileId
+          : null;
+    if (!otherId) continue;
+    const prev = others.get(otherId);
+    if (!prev || g.grantedAt < prev) others.set(otherId, g.grantedAt);
+  }
+
+  return [...others.entries()]
+    .map(([otherId, connectedAt]) => {
       const profile = store.profiles.find((p) => p.id === otherId);
       if (!profile) return null;
-      return {
+      const connection = buildConnectionState(viewer.id, otherId);
+      const row: ConnectionSummary = {
         profile,
         age: ageFromDob(profile.dob),
-        connection: buildConnectionState(viewer.id, otherId),
-        connectedAt: r.respondedAt ?? r.createdAt,
+        connection,
+        connectedAt,
       };
+      if (connection.canSeeContact) {
+        row.phone = store.profilePrivates.find((p) => p.profileId === otherId)?.phone;
+      }
+      return row;
     })
     .filter((x): x is ConnectionSummary => x !== null)
     .sort((a, b) => b.connectedAt.localeCompare(a.connectedAt));
@@ -843,6 +1120,60 @@ export async function getShortlist(): Promise<ShortlistView[]> {
 // Settings
 // ---------------------------------------------------------------------------
 
+/**
+ * Everything the wizard collects can be corrected from Settings. Only the
+ * server-owned columns (id, code, status, verification, timestamps) stay out
+ * of the family's hands.
+ */
+const EDITABLE_PROFILE_FIELDS = [
+  'gender',
+  'dob',
+  'heightCm',
+  'weightBand',
+  'complexion',
+  'education',
+  'educationLevel',
+  'occupation',
+  'occupationCategory',
+  'incomeBand',
+  'religion',
+  'category',
+  'community',
+  'maritalStatus',
+  'manglik',
+  'state',
+  'district',
+  'city',
+  'village',
+  'cityLat',
+  'cityLng',
+] as const;
+
+export type EditableProfileField = (typeof EDITABLE_PROFILE_FIELDS)[number];
+
+export async function updateMyProfile(
+  patch: Partial<Pick<Profile, EditableProfileField>>,
+): Promise<Profile> {
+  await delay(350);
+  const profile = requireActiveProfile();
+  const clean: Partial<Profile> = {};
+  for (const key of EDITABLE_PROFILE_FIELDS) {
+    if (patch[key] !== undefined) (clean as Record<string, unknown>)[key] = patch[key];
+  }
+  // The legal age floor holds on edit exactly as it does at registration.
+  const dob = (clean.dob as string | undefined) ?? profile.dob;
+  const gender = (clean.gender as Profile['gender'] | undefined) ?? profile.gender;
+  const minAge = gender === 'male' ? 21 : 18;
+  if (ageFromDob(dob) < minAge) {
+    throw new ApiError(
+      'FORBIDDEN',
+      `A ${gender === 'male' ? 'boy' : 'girl'} must be ${minAge} or older to be listed here.`,
+    );
+  }
+  db().updateProfile(profile.id, clean);
+  return getProfileById(profile.id);
+}
+
 export async function setProfileStatus(
   profileId: string,
   status: Extract<ProfileStatus, 'active' | 'paused' | 'matched'>,
@@ -875,4 +1206,10 @@ export async function reportProfile(
 export async function resetDemoData(): Promise<void> {
   await delay(300);
   db().resetDemoData();
+}
+
+/** Remove only the generated dummy rows (Profile.isSeed); real families stay. */
+export async function removeSeedData(): Promise<void> {
+  await delay(300);
+  db().removeSeedData();
 }
