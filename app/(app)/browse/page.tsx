@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowUpDown, Filter, SearchX, ShieldCheck } from 'lucide-react';
+import { Filter, SearchX } from 'lucide-react';
 import * as api from '@/lib/api';
 import { ApiError } from '@/lib/api';
 import type { BrowseCard, ProfileFilters } from '@/types';
@@ -14,17 +14,20 @@ import {
   serializeFilters,
 } from '@/lib/filter-params';
 import {
+  DIET_LABELS,
   EDUCATION_LEVEL_LABELS,
   INCOME_LABELS,
   MANGLIK_LABELS,
   MARITAL_LABELS,
   OCCUPATION_LABELS,
   RELIGION_LABELS,
+  CATEGORY_LABELS,
   formatHeightShort,
   ACTIONS,
 } from '@/lib/labels';
 import { FilterForm, type FilterOptions } from '@/components/filters';
 import { ProfileCardItem, ProfileCardSkeleton } from '@/components/profile-card';
+import { CardSlider } from '@/components/card-slider';
 import { Button, Chip, EmptyState, ErrorNote, Sheet } from '@/components/ui';
 import { useToast } from '@/components/providers';
 
@@ -108,9 +111,9 @@ function BrowseInner() {
     <div className="md:flex md:gap-6">
       {/* Desktop: sticky sidebar. Mobile: nothing — the sheet handles it. */}
       <aside className="hidden md:block md:w-72 md:shrink-0">
-        <div className="sticky top-[124px] max-h-[calc(100dvh-140px)] overflow-y-auto rounded-xl border border-rule bg-card p-3 shadow-card">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-base font-bold">
+        <div className="sticky top-20 max-h-[calc(100dvh-104px)] overflow-y-auto rounded-2xl bg-card p-4 ring-1 ring-rule shadow-[var(--shadow-e1)]">
+          <div className="mb-1 flex items-center justify-between">
+            <h2 className="text-[17px] font-bold leading-6">
               Filters
               <span className="hindi block font-normal text-ink-3">छाँटें</span>
             </h2>
@@ -118,7 +121,7 @@ function BrowseInner() {
               <button
                 type="button"
                 onClick={() => applyFilters({ sort: filters.sort })}
-                className="text-sm font-semibold text-stamp underline"
+                className="tap -mr-2 rounded-md px-2 py-1 text-[15px] font-semibold text-stamp hover:bg-stamp-wash"
               >
                 Clear all
               </button>
@@ -133,45 +136,31 @@ function BrowseInner() {
       </aside>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="text-xl font-bold leading-tight">
-            Profiles in the register
-            <span className="hindi block font-normal text-ink-3">रजिस्टर की प्रोफ़ाइल</span>
+        {/* One thin toolbar row, so the card below it fits a phone screen whole. */}
+        <div className="mb-2 flex h-9 items-center justify-between gap-3">
+          <h1 className="text-[17px] font-bold leading-6 tracking-tight text-ink" aria-live="polite">
+            Profiles
+            <span className="ml-1.5 font-medium text-ink-3">
+              {cards === null ? '…' : `· ${total}${activeCount > 0 ? ' matching' : ''}`}
+            </span>
           </h1>
-        </div>
-
-        <div className="mt-3 flex items-center gap-2">
-          <Button
-            className="md:hidden"
+          <button
+            type="button"
             onClick={() => setSheetOpen(true)}
-            icon={<Filter size={20} aria-hidden />}
+            className="tap -mr-2 flex h-9 items-center gap-1.5 rounded-md px-2.5 text-[15px] font-semibold text-ink-2 hover:bg-paper-deep hover:text-ink md:hidden"
           >
+            <Filter size={16} aria-hidden />
             Filters
             {activeCount > 0 ? (
-              <span className="code ml-1 grid h-6 min-w-6 place-items-center rounded-full bg-stamp px-1.5 text-[12px] font-bold text-white">
+              <span className="code grid h-5 min-w-5 place-items-center rounded-full bg-stamp px-1.5 text-[12px] font-semibold text-white">
                 {activeCount}
               </span>
             ) : null}
-          </Button>
-
-          <label className="tap ml-auto flex items-center gap-2 rounded-lg border-2 border-rule-strong bg-card px-3">
-            <ArrowUpDown size={18} className="shrink-0 text-ink-3" aria-hidden />
-            <span className="sr-only">Sort profiles</span>
-            <select
-              value={filters.sort ?? 'newest'}
-              onChange={(e) =>
-                applyFilters({ ...filters, sort: e.target.value as ProfileFilters['sort'] })
-              }
-              className="bg-transparent py-2 text-[15px] font-semibold text-ink"
-            >
-              <option value="newest">Newest first</option>
-              <option value="recently_active">Recently active</option>
-            </select>
-          </label>
+          </button>
         </div>
 
         {chips.length > 0 ? (
-          <ul className="mt-3 flex flex-wrap gap-2">
+          <ul className="mb-3 flex flex-wrap gap-2">
             {chips.map((chip) => (
               <li key={chip.id}>
                 <Chip
@@ -194,22 +183,14 @@ function BrowseInner() {
           </ul>
         ) : null}
 
-        {/* Count is always visible, even while loading, so the page never jumps. */}
-        <p className="mt-3 border-b-2 border-stamp/25 pb-1.5 text-[15px] font-bold" aria-live="polite">
-          {cards === null ? 'Counting profiles…' : `${total} ${total === 1 ? 'profile' : 'profiles'}`}
-          {activeCount > 0 && cards !== null ? (
-            <span className="font-normal text-ink-3"> match your filters</span>
-          ) : null}
-        </p>
-
         {error ? (
-          <div className="mt-4">
+          <div>
             <ErrorNote message={error} onRetry={load} />
           </div>
         ) : cards === null ? (
           <ListSkeleton />
         ) : cards.length === 0 ? (
-          <div className="mt-4">
+          <div>
             <EmptyState
               icon={<SearchX size={26} aria-hidden />}
               title="No profiles match these filters"
@@ -235,28 +216,21 @@ function BrowseInner() {
             />
           </div>
         ) : (
-          <ul className="mt-4 space-y-3">
-            {cards.map((card) => (
-              <ProfileCardItem
-                key={card.profile.id}
-                card={card}
-                onToggleSave={onToggleSave}
-                saving={savingId === card.profile.id}
-              />
-            ))}
-          </ul>
+          <div>
+            <CardSlider count={cards.length}>
+              {cards.map((card) => (
+                <ProfileCardItem
+                  key={card.profile.id}
+                  card={card}
+                  onToggleSave={onToggleSave}
+                  saving={savingId === card.profile.id}
+                  slide
+                />
+              ))}
+            </CardSlider>
+          </div>
         )}
 
-        <p className="mt-6 flex items-start gap-2 border-t border-rule pt-4 text-sm text-ink-2">
-          <ShieldCheck size={18} className="mt-0.5 shrink-0 text-seal" aria-hidden />
-          <span>
-            Names, photos and phone numbers are never shown in this list — only after both families
-            agree.
-            <span className="hindi block text-ink-3">
-              नाम, फ़ोटो और नंबर इस सूची में कभी नहीं दिखते।
-            </span>
-          </span>
-        </p>
       </div>
 
       <MobileFilterSheet
@@ -323,7 +297,6 @@ function MobileFilterSheet({
       open={open}
       onClose={onClose}
       title={activeCount > 0 ? `Filters (${activeCount})` : 'Filters'}
-      hindi="छाँटें"
       footer={
         <div className="flex gap-3">
           <Button
@@ -333,18 +306,11 @@ function MobileFilterSheet({
           >
             Clear all
           </Button>
-          <Button
-            variant="primary"
-            fullWidth
-            onClick={() => onApply(draft)}
-            label={{
-              en:
-                count === null
-                  ? ACTIONS.applyFilters.en
-                  : `Show ${count} ${count === 1 ? 'profile' : 'profiles'}`,
-              hi: ACTIONS.applyFilters.hi,
-            }}
-          />
+          <Button variant="primary" fullWidth onClick={() => onApply(draft)}>
+            {count === null
+              ? ACTIONS.applyFilters.en
+              : `Show ${count} ${count === 1 ? 'profile' : 'profiles'}`}
+          </Button>
         </div>
       }
     >
@@ -359,8 +325,8 @@ function MobileFilterSheet({
 
 function ListSkeleton() {
   return (
-    <ul className="mt-4 space-y-3" aria-busy="true" aria-label="Loading profiles">
-      {Array.from({ length: 5 }, (_, i) => (
+    <ul aria-busy="true" aria-label="Loading profiles">
+      {Array.from({ length: 1 }, (_, i) => (
         <ProfileCardSkeleton key={i} />
       ))}
     </ul>
@@ -426,8 +392,9 @@ function buildChips(f: ProfileFilters): ChipSpec[] {
     ['occupationCategory', (v) => OCCUPATION_LABELS[v as keyof typeof OCCUPATION_LABELS]?.en ?? v],
     ['incomeBand', (v) => INCOME_LABELS[v as keyof typeof INCOME_LABELS]?.en ?? v],
     ['religion', (v) => RELIGION_LABELS[v as keyof typeof RELIGION_LABELS]?.en ?? v],
-    ['community', (v) => v],
+    ['category', (v) => CATEGORY_LABELS[v as keyof typeof CATEGORY_LABELS]?.en ?? v],
     ['manglik', (v) => MANGLIK_LABELS[v as keyof typeof MANGLIK_LABELS]?.en ?? v],
+    ['diet', (v) => DIET_LABELS[v as keyof typeof DIET_LABELS]?.en ?? v],
   ];
 
   for (const [key, label] of lists) {

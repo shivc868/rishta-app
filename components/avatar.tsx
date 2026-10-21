@@ -38,21 +38,22 @@ export function GenderAvatar({
   className,
 }: {
   gender: Gender;
-  size?: 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }) {
-  const sizes = { sm: 'h-16 w-16', md: 'h-20 w-20 sm:h-24 sm:w-24' };
-  const iconSizes = { sm: 'h-10 w-10', md: 'h-12 w-12 sm:h-14 sm:w-14' };
+  const sizes = { xs: 'h-14 w-14', sm: 'h-16 w-16', md: 'h-20 w-20 sm:h-24 sm:w-24', lg: 'h-28 w-28' };
+  const iconSizes = { xs: 'h-8 w-8', sm: 'h-9 w-9', md: 'h-11 w-11 sm:h-13 sm:w-13', lg: 'h-16 w-16' };
   const female = gender === 'female';
   return (
     <div
       role="img"
       aria-label={female ? 'Girl — photo stays private' : 'Boy — photo stays private'}
       className={cx(
-        'grid shrink-0 place-items-center rounded-xl border',
+        // Flat tints only. A gradient here fought with every surface it sat on.
+        'grid shrink-0 place-items-center rounded-2xl',
         female
-          ? 'border-stamp/25 bg-linear-to-br from-stamp-wash to-gold-soft/60 text-stamp'
-          : 'border-rule-strong bg-linear-to-br from-paper-deep to-gold-soft/60 text-ink-2',
+          ? 'bg-stamp-wash text-stamp ring-1 ring-stamp-ring'
+          : 'bg-paper-deep text-ink-2 ring-1 ring-rule-strong',
         sizes[size],
         className,
       )}

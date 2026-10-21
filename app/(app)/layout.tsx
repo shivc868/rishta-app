@@ -22,9 +22,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [ready, isSignedIn, activeProfile, router]);
 
   return (
-    <div className="min-h-dvh pb-[76px] md:pb-0">
+    <div
+      className="min-h-dvh md:pb-0"
+      style={{ paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))' }}
+    >
       <Masthead />
-      <main className="mx-auto max-w-5xl px-4 py-4">
+      <main
+        className="mx-auto w-full max-w-5xl pb-6 pt-3 md:pt-5"
+        style={{
+          paddingLeft: 'max(1rem, env(safe-area-inset-left, 0px))',
+          paddingRight: 'max(1rem, env(safe-area-inset-right, 0px))',
+        }}
+      >
         {ready && isSignedIn && activeProfile ? (
           children
         ) : (

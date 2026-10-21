@@ -1,202 +1,191 @@
-'use client';
+'use client'
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, BookHeart, Lock, ShieldCheck } from 'lucide-react';
-import * as api from '@/lib/api';
-import { ApiError } from '@/lib/api';
-import { Button, Card, TextField } from '@/components/ui';
-import { useSession, useToast } from '@/components/providers';
+import {Suspense, useEffect, useRef, useState} from 'react'
+import Link from 'next/link'
+import {useRouter, useSearchParams} from 'next/navigation'
+import * as api from '@/lib/api'
+import {ApiError} from '@/lib/api'
+import * as auth from '@/lib/auth'
+import {BrandMark} from '@/components/nav'
+import {GaneshMark, GoldRule, Invocation} from '@/components/ornaments'
+import {Button} from '@/components/ui'
+import {useSession} from '@/components/providers'
 
-const DEMO_PHONE = '9876543210';
+/**
+ * Sign-in is Google only for now. The WhatsApp OTP flow (lib/auth sendOtp /
+ * verifyOtp and the Supabase hook) is built and stays wired; it returns to
+ * this screen once the Meta business verification clears.
+ */
+
+/** Only same-origin paths may be used as a post-login destination. */
+function safeNext(raw: string | null): string | null {
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return null
+  return raw
+}
 
 export default function LoginPage() {
-  const router = useRouter();
-  const { push } = useToast();
-  const { ready, isSignedIn, activeProfile, refresh } = useSession();
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  )
+}
 
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
-  const [phone, setPhone] = useState('');
-  const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const otpRef = useRef<HTMLInputElement>(null);
+function LoginForm() {
+  const router = useRouter()
+  const {ready, isSignedIn, activeProfile, refresh} = useSession()
+  const params = useSearchParams()
+  const next = safeNext(params.get('next'))
+  const cameBackWithError = params.get('error') === 'oauth'
+  const demo = auth.authMode() === 'demo'
+
+  const [googleBusy, setGoogleBusy] = useState(false)
+  const [googleError, setGoogleError] = useState<string | null>(
+    cameBackWithError ? 'Google sign-in did not finish. Try again.' : null,
+  )
 
   // Already signed in? Don't make them do it twice.
   useEffect(() => {
-    if (ready && isSignedIn) router.replace(activeProfile ? '/browse' : '/onboarding');
-  }, [ready, isSignedIn, activeProfile, router]);
+    if (ready && isSignedIn) router.replace(next ?? (activeProfile ? '/browse' : '/onboarding'))
+  }, [ready, isSignedIn, activeProfile, router, next])
 
+  // Coming back from Google: the callback route set the Supabase cookie, but the
+  // register screens still read the mock store — mirror the user into it.
+  const bridged = useRef(false)
   useEffect(() => {
-    if (step === 'otp') otpRef.current?.focus();
-  }, [step]);
+    if (!ready || isSignedIn || demo || bridged.current) return
+    bridged.current = true
+    setGoogleBusy(true)
+    auth
+      .completeOAuthSignIn()
+      .then((signedIn) => (signedIn ? refresh() : undefined))
+      .catch(() => setGoogleError('Google sign-in did not finish. Try again.'))
+      .finally(() => setGoogleBusy(false))
+  }, [ready, isSignedIn, demo, refresh])
 
-  async function submitPhone(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
+  async function continueWithGoogle() {
+    setGoogleError(null)
+    setGoogleBusy(true)
     try {
-      const { hint } = await api.sendOtp(phone);
-      push('info', hint);
-      setStep('otp');
+      const result = await auth.signInWithGoogle(next)
+      if (result === 'redirecting') return // the browser is leaving for Google
+      await refresh()
+      if (next) {
+        router.replace(next)
+        return
+      }
+      const profiles = await api.getMyProfiles()
+      router.replace(profiles.length ? '/browse' : '/onboarding')
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not send the code. Try once more.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitOtp(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      await api.verifyOtp(phone, code);
-      await refresh();
-      const profiles = await api.getMyProfiles();
-      router.replace(profiles.length ? '/browse' : '/onboarding');
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'That code did not work. Ask for a new one.',
-      );
-      setBusy(false);
+      setGoogleError(
+        err instanceof ApiError ? err.message : 'Google sign-in did not finish. Try again.',
+      )
+      setGoogleBusy(false)
     }
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col px-4 py-8">
-      <div className="mb-8 text-center">
-        <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-linear-to-br from-stamp to-stamp-ink text-gold-soft shadow-card">
-          <BookHeart size={26} aria-hidden />
+    <main className="foil relative min-h-dvh overflow-hidden">
+      {/* The jaali printed over the foil, and a soft light from the top. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            "radial-gradient(40rem 24rem at 50% 0%, rgb(255 255 255 / 0.35), transparent 70%), url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cpath d='M28 2 L54 28 L28 54 L2 28 Z' fill='none' stroke='%23fff6d0' stroke-opacity='0.28' stroke-width='1'/%3E%3Ccircle cx='28' cy='28' r='1.6' fill='%23fff6d0' fill-opacity='0.4'/%3E%3C/svg%3E\")",
+          backgroundSize: 'auto, 56px 56px',
+        }}
+      />
+      <div className="relative mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 pb-16 pt-6">
+      <div
+        className="mb-6 text-center"
+        style={{animation: 'rishta-pop-in 400ms var(--ease-out-soft)'}}
+      >
+        {/* The head of a wedding card: Ganesha, the invocation, then the name,
+            printed in deep maroon on the gold. */}
+        <div className="mx-auto w-fit text-[#7a1437] drop-shadow-[0_1px_0_rgba(255,255,255,0.35)]">
+          <GaneshMark size={88} />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight">Rishta Register</h1>
-        <p className="hindi text-ink-3">रिश्ता रजिस्टर</p>
+        <Invocation className="mt-1 text-[#7a1437]!" />
+        <GoldRule className="mx-auto mt-4 w-48 text-[#7a1437]! [&>span]:via-[#7a1437]/60 [&>span]:to-[#7a1437]/60" />
+        <div className="mx-auto mt-5 flex items-center justify-center gap-3">
+          <BrandMark size="md" />
+          <h1 className="display text-left text-3xl leading-none text-[#3b0d1f]">
+            Rishta
+            <span className="hindi block text-[#7a1437]">रिश्ता रजिस्टर</span>
+          </h1>
+        </div>
       </div>
 
-      <Card className="p-5">
-        {step === 'phone' ? (
-          <form onSubmit={submitPhone} noValidate>
-            <h2 className="text-lg font-bold leading-tight">
-              Enter your mobile number
-              <span className="hindi block font-normal text-ink-3">
-                अपना मोबाइल नंबर डालें
-              </span>
-            </h2>
-            <p className="mt-2 text-[15px] text-ink-2">
-              We send a 6-digit code to this number. Only you see it.
-            </p>
+      {/* A gold-glass panel on the foil, with the printed double frame.
+          Translucent so the jaali shows through, the way text on a card sits
+          on the paper rather than on a pasted white label. */}
+      <section
+        aria-labelledby="signin-title"
+        className="relative rounded-2xl bg-[rgb(255_250_230_/_0.55)] p-6 shadow-[var(--shadow-e3)] ring-1 ring-[#fff0b8]/80 backdrop-blur-md"
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-1.5 rounded-[6px] border border-[#b87400]/55"
+        />
+        <h2 id="signin-title" className="text-center text-lg font-bold leading-tight text-[#3b0d1f]">
+          Sign in to the register
+        </h2>
 
-            <div className="mt-4 flex items-stretch gap-2">
-              <span className="code grid shrink-0 place-items-center rounded-lg border-2 border-rule-strong bg-paper px-3 text-base font-semibold text-ink-2">
-                +91
-              </span>
-              <TextField
-                label="Mobile number"
-                hindi="मोबाइल नंबर"
-                className="flex-1"
-                type="tel"
-                inputMode="numeric"
-                autoComplete="tel-national"
-                maxLength={10}
-                value={phone}
-                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                placeholder="98765 43210"
-                error={error}
-              />
-            </div>
-
-            <Button
-              type="submit"
-              variant="primary"
-              fullWidth
-              loading={busy}
-              className="mt-5"
-              label={{ en: 'Send me the code', hi: 'कोड भेजें' }}
-            />
-
-            <button
-              type="button"
-              onClick={() => setPhone(DEMO_PHONE)}
-              className="tap mt-3 w-full text-sm font-semibold text-stamp underline"
-            >
-              Use the demo family account ({DEMO_PHONE})
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={submitOtp} noValidate>
-            <button
-              type="button"
-              onClick={() => {
-                setStep('phone');
-                setError(null);
-                setCode('');
-              }}
-              className="tap -ml-2 mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink-2"
-            >
-              <ArrowLeft size={18} aria-hidden />
-              Change number
-            </button>
-
-            <h2 className="text-lg font-bold leading-tight">
-              Enter the 6-digit code
-              <span className="hindi block font-normal text-ink-3">6 अंकों का कोड डालें</span>
-            </h2>
-            <p className="mt-2 text-[15px] text-ink-2">
-              Sent to <span className="code font-semibold">+91 {phone}</span>
-            </p>
-
-            <div className="mt-3 rounded-lg border-2 border-dashed border-stamp/40 bg-stamp-wash px-3 py-2 text-sm font-semibold text-stamp-ink">
-              Demo: enter any 6 digits
-              <span className="hindi block font-normal">डेमो: कोई भी 6 अंक डालें</span>
-            </div>
-
-            <TextField
-              label="6-digit code"
-              hindi="कोड"
-              className="mt-4"
-              ref={otpRef}
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              error={error}
-            />
-
-            <Button
-              type="submit"
-              variant="primary"
-              fullWidth
-              loading={busy}
-              className="mt-5"
-              label={{ en: 'Open my register', hi: 'रजिस्टर खोलें' }}
-            />
-          </form>
+        <Button
+          type="button"
+          variant="secondary"
+          fullWidth
+          loading={googleBusy}
+          onClick={continueWithGoogle}
+          icon={<GoogleMark />}
+          className="mt-4 bg-[#fffdf5] text-[#2a1a12] ring-[#d9a520] hover:bg-white"
+        >
+          Continue with Google
+        </Button>
+        {googleError && (
+          <p role="alert" className="mt-3 text-center text-sm font-semibold text-oxide">
+            {googleError}
+          </p>
         )}
-      </Card>
+        {demo && (
+          <p className="mt-3 text-center text-xs text-[#5a1a33]">
+            Demo: signs in as {auth.DEMO_GOOGLE_EMAIL}
+          </p>
+        )}
+      </section>
 
-      <div className="mt-6 space-y-3 text-[15px] text-ink-2">
-        <p className="flex items-start gap-2.5">
-          <Lock size={20} className="mt-0.5 shrink-0 text-seal" aria-hidden />
-          <span>
-            Your daughter&rsquo;s photo and phone number are never shown publicly.
-            <span className="hindi block text-ink-3">
-              आपकी बेटी की फ़ोटो और नंबर कभी सार्वजनिक नहीं होते।
-            </span>
-          </span>
-        </p>
-        <p className="flex items-start gap-2.5">
-          <ShieldCheck size={20} className="mt-0.5 shrink-0 text-seal" aria-hidden />
-          <span>
-            Photos and numbers open only when both families agree.
-            <span className="hindi block text-ink-3">
-              फ़ोटो और नंबर तभी खुलते हैं जब दोनों परिवार सहमत हों।
-            </span>
-          </span>
-        </p>
+      <p className="absolute inset-x-0 bottom-5 text-center text-xs text-[#5a1a33]">
+        Run by Shiv Kumar Technologies ·{' '}
+        <Link href="/about" className="font-semibold text-[#3b0d1f] underline">
+          About &amp; privacy
+        </Link>
+      </p>
       </div>
     </main>
-  );
+  )
+}
+
+/** Google's four-colour "G", inline so it needs no asset request. */
+function GoogleMark() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden>
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+      />
+    </svg>
+  )
 }
